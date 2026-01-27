@@ -180,6 +180,11 @@
                 </button>
             </li>
             <li class="nav-item">
+                <button class="nav-link" data-bs-toggle="tab" data-bs-target="#export-tab">
+                    <i class="bi bi-file-earmark-pdf"></i> Export
+                </button>
+            </li>
+            <li class="nav-item">
                 <button class="nav-link" data-bs-toggle="tab" data-bs-target="#settings-tab">
                     <i class="bi bi-gear"></i> Settings
                 </button>
@@ -428,18 +433,164 @@
                 </div>
             </div>
 
+            <!-- Export Tab -->
+            <div class="tab-pane fade" id="export-tab">
+                <div class="row">
+                    <div class="col-md-8 offset-md-2">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5><i class="bi bi-file-earmark-pdf me-2"></i>Export PDF Report</h5>
+                            </div>
+                            <div class="card-body">
+                                <!-- Period Selection -->
+                                <div class="mb-4">
+                                    <label class="form-label">Report Period</label>
+                                    <div class="btn-group w-100" role="group" id="export-period-buttons">
+                                        <button type="button" class="btn btn-outline-primary" onclick="setExportPeriod('month', this)">This Month</button>
+                                        <button type="button" class="btn btn-outline-primary" onclick="setExportPeriod('last3months', this)">Last 3 Months</button>
+                                        <button type="button" class="btn btn-outline-primary active" onclick="setExportPeriod('year', this)">Year to Date</button>
+                                        <button type="button" class="btn btn-outline-primary" onclick="setExportPeriod('all', this)">All Time</button>
+                                    </div>
+                                    <div class="mt-2">
+                                        <select class="form-select" id="export-month-selector" onchange="setExportCustomMonth()">
+                                            <option value="">Or select specific month...</option>
+                                        </select>
+                                    </div>
+                                    <div class="mt-2">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="export-custom-range" onchange="toggleCustomDateRange()">
+                                            <label class="form-check-label" for="export-custom-range">Custom date range</label>
+                                        </div>
+                                        <div id="custom-date-range-inputs" class="mt-2 gap-2" style="display: none;">
+                                            <input type="date" class="form-control form-control-sm" id="export-start-date" onchange="updateCustomDateRange()">
+                                            <span class="mx-2">to</span>
+                                            <input type="date" class="form-control form-control-sm" id="export-end-date" onchange="updateCustomDateRange()">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Section Checkboxes -->
+                                <div class="mb-4">
+                                    <label class="form-label">Include in Report</label>
+                                    <div class="card" style="background: var(--bg-main);">
+                                        <div class="card-body">
+                                            <div class="form-check mb-2">
+                                                <input class="form-check-input" type="checkbox" id="export-summary" checked>
+                                                <label class="form-check-label" for="export-summary">
+                                                    <strong>Summary Metrics</strong>
+                                                    <small class="text-muted d-block">Income, Expenses, Net Position, Savings Rate</small>
+                                                </label>
+                                            </div>
+                                            <div class="form-check mb-2">
+                                                <input class="form-check-input" type="checkbox" id="export-essential" checked>
+                                                <label class="form-check-label" for="export-essential">
+                                                    <strong>Essential vs Optional</strong>
+                                                    <small class="text-muted d-block">Breakdown of essential and optional spending</small>
+                                                </label>
+                                            </div>
+                                            <div class="form-check mb-2">
+                                                <input class="form-check-input" type="checkbox" id="export-categories" checked>
+                                                <label class="form-check-label" for="export-categories">
+                                                    <strong>Category Breakdown</strong>
+                                                    <small class="text-muted d-block">Spending by category with amounts and counts</small>
+                                                </label>
+                                            </div>
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" id="export-trend">
+                                                <label class="form-check-label" for="export-trend">
+                                                    <strong>Monthly Trend Table</strong>
+                                                    <small class="text-muted d-block">12-month history of income, expenses, net</small>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Custom Title -->
+                                <div class="mb-4">
+                                    <label class="form-label">Report Title (Optional)</label>
+                                    <input type="text" class="form-control" id="export-title" placeholder="Financial Report" value="Financial Report">
+                                </div>
+
+                                <!-- Export Button -->
+                                <button class="btn btn-primary btn-lg w-100" onclick="generatePDFExport()">
+                                    <i class="bi bi-download me-2"></i>Download PDF Report
+                                </button>
+
+                                <div id="export-status" class="mt-3"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Settings Tab -->
             <div class="tab-pane fade" id="settings-tab">
                 <div class="row">
                     <div class="col-md-8 offset-md-2">
                         <div class="card">
-                            <div class="card-header">
-                                <h5>Category Management</h5>
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <h5 class="mb-0">Category Management</h5>
+                                <button class="btn btn-primary btn-sm" onclick="addNewCategory()">
+                                    <i class="bi bi-plus-circle"></i> Add Category
+                                </button>
                             </div>
                             <div class="card-body">
-                                <p class="text-muted mb-3">Manage your expense categories. Deleting a category will set all associated expenses to "Uncategorized".</p>
+                                <p class="text-muted mb-3">Manage your expense categories. Click the color to change it, pencil to rename, or trash to delete.</p>
                                 <div id="category-list" class="list-group">
                                     <!-- Categories will be loaded here -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Duplicate Detection -->
+                        <div class="card mt-4">
+                            <div class="card-header">
+                                <h5><i class="bi bi-files me-2"></i>Duplicate Detection</h5>
+                            </div>
+                            <div class="card-body">
+                                <p class="text-muted">Scan your transactions for duplicates that may have been imported twice.</p>
+                                <button class="btn btn-primary" onclick="scanForDuplicates()">
+                                    <i class="bi bi-search"></i> Scan for Duplicates
+                                </button>
+                                <div id="duplicates-results" class="mt-3" style="display: none;"></div>
+                            </div>
+                        </div>
+
+                        <!-- Service Station Recategorization -->
+                        <div class="card mt-4">
+                            <div class="card-header">
+                                <h5><i class="bi bi-fuel-pump me-2"></i>Smart Recategorization</h5>
+                            </div>
+                            <div class="card-body">
+                                <p class="text-muted">Automatically recategorize service station transactions based on amount:</p>
+                                <ul class="text-muted small">
+                                    <li><strong>$40+</strong> → Transportation (fuel purchases)</li>
+                                    <li><strong>Under $40</strong> → Food & Dining (convenience store)</li>
+                                </ul>
+                                <button class="btn btn-secondary" onclick="recategorizeServiceStations()">
+                                    <i class="bi bi-arrow-repeat"></i> Recategorize Service Stations
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Bulk Actions -->
+                        <div class="card mt-4">
+                            <div class="card-header">
+                                <h5><i class="bi bi-ui-checks me-2"></i>Bulk Actions</h5>
+                            </div>
+                            <div class="card-body">
+                                <p class="text-muted">Select transactions in the Transactions tab, then use these bulk actions:</p>
+                                <div class="btn-group">
+                                    <button class="btn btn-outline-primary" onclick="bulkEditCategory()">
+                                        <i class="bi bi-tag"></i> Change Category
+                                    </button>
+                                    <button class="btn btn-outline-secondary" onclick="bulkEditEssential()">
+                                        <i class="bi bi-check-circle"></i> Essential/Optional
+                                    </button>
+                                    <button class="btn btn-outline-danger" onclick="bulkDeleteSelected()">
+                                        <i class="bi bi-trash"></i> Delete Selected
+                                    </button>
                                 </div>
                             </div>
                         </div>

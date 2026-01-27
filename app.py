@@ -15,7 +15,7 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-change-
 db = SQLAlchemy(app)
 
 # Simple password (in production, use environment variable)
-APP_PASSWORD = os.environ.get('APP_PASSWORD', 'balancesheet2025')
+APP_PASSWORD = os.environ.get('APP_PASSWORD', 'Sebastian0727Gold!')
 
 # Login required decorator
 def login_required(f):
@@ -1021,6 +1021,585 @@ def import_csv():
 
     except Exception as e:
         return jsonify({'error': f'Failed to process CSV: {str(e)}'}), 400
+
+
+# ==========================================
+# Helper Functions for Smart Matching
+# ==========================================
+
+def normalize_description(description):
+    """
+    Normalize a transaction description for comparison.
+    Removes variable parts like dates, reference numbers, amounts, etc.
+    """
+    desc = description.lower().strip()
+
+    # Remove dates in various formats
+    desc = re.sub(r'\d{1,2}[-/]\d{1,2}[-/]\d{2,4}', '', desc)
+    desc = re.sub(r'\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s*\d{0,4}', '', desc, flags=re.IGNORECASE)
+
+    # Remove reference numbers, receipt numbers, transaction IDs
+    desc = re.sub(r'(ref|rcpt|receipt|txn|transaction|id|no|#)[\s:]*[a-z0-9]+', '', desc, flags=re.IGNORECASE)
+    desc = re.sub(r'\b[a-z]{2,4}\d{6,}\b', '', desc)  # Letter prefix + numbers
+    desc = re.sub(r'\b\d{6,}\b', '', desc)  # Long number sequences (6+ digits)
+
+    # Remove card numbers (last 4 digits pattern)
+    desc = re.sub(r'card\s*\d{4}', '', desc, flags=re.IGNORECASE)
+    desc = re.sub(r'x{2,}\d{4}', '', desc, flags=re.IGNORECASE)
+
+    # Remove currency amounts
+    desc = re.sub(r'\$[\d,]+\.?\d*', '', desc)
+    desc = re.sub(r'aud\s*[\d,]+\.?\d*', '', desc, flags=re.IGNORECASE)
+
+    # Remove common suffixes that vary
+    desc = re.sub(r'\s+(aus|australia|au|vic|nsw|qld|sa|wa|nt|tas|act)\s*$', '', desc, flags=re.IGNORECASE)
+    desc = re.sub(r'\s+\d{4}\s*$', '', desc)  # Trailing 4-digit numbers
+
+    # Remove extra whitespace
+    desc = re.sub(r'\s+', ' ', desc).strip()
+
+    return desc
+
+
+def get_period_label(period):
+    """Get human-readable label for a period"""
+    today = datetime.now().date()
+
+    if period.startswith('range-'):
+        range_str = period.replace('range-', '')
+        try:
+            start_str, end_str = range_str.split('_')
+            return f'{start_str} to {end_str}'
+        except:
+            return 'Custom Range'
+    elif period.startswith('custom-'):
+        month_str = period.replace('custom-', '')
+        try:
+            year, month = map(int, month_str.split('-'))
+            return datetime(year, month, 1).strftime('%B %Y')
+        except:
+            return 'Selected Month'
+    elif period == 'month':
+        return today.strftime('%B %Y')
+    elif period == 'last3months':
+        return 'Last 3 Months'
+    elif period == 'last12months':
+        return 'Last 12 Months'
+    elif period == 'year':
+        return f'Year to Date ({today.year})'
+    elif period == 'all':
+        return 'All Time'
+    return 'Selected Period'
+
+
+# ==========================================
+# Duplicate Detection Endpoints
+# ==========================================
+
+@app.route('/api/duplicates', methods=['GET'])
+@login_required
+def find_duplicates():
+    """Find potential duplicate transactions in the database"""
+    expenses = Expense.query.order_by(Expense.date.desc()).all()
+
+    # Group by (date, amount) - most reliable duplicate indicators
+    groups = {}
+    for exp in expenses:
+        key = (exp.date.isoformat(), str(exp.amount))
+        if key not in groups:
+            groups[key] = []
+        groups[key].append(exp)
+
+    # Find groups with 2+ transactions (potential duplicates)
+    duplicates = []
+    for key, items in groups.items():
+        if len(items) >= 2:
+            # Further check: descriptions should be similar
+            desc_groups = {}
+            for item in items:
+                norm_desc = normalize_description(item.description)
+                if norm_desc not in desc_groups:
+                    desc_groups[norm_desc] = []
+                desc_groups[norm_desc].append(item)
+
+            for desc, desc_items in desc_groups.items():
+                if len(desc_items) >= 2:
+                    duplicates.append({
+                        'date': key[0],
+                        'amount': key[1],
+                        'description': desc_items[0].description,
+                        'count': len(desc_items),
+                        'items': [{'id': i.id, 'description': i.description,
+                                   'source_account': i.source_account,
+                                   'category': i.category.name if i.category else 'Uncategorized'} for i in desc_items]
+                    })
+
+    duplicates.sort(key=lambda x: x['date'], reverse=True)
+    return jsonify({'duplicates': duplicates, 'total_groups': len(duplicates)})
+
+
+@app.route('/api/duplicates/remove', methods=['DELETE'])
+@login_required
+def remove_duplicates():
+    """Remove specified duplicate transactions"""
+    try:
+        data = request.get_json()
+        ids_to_remove = data.get('ids', [])
+
+        if not ids_to_remove:
+            return jsonify({'error': 'No IDs provided'}), 400
+
+        removed_count = 0
+        for expense_id in ids_to_remove:
+            expense = Expense.query.get(expense_id)
+            if expense:
+                db.session.delete(expense)
+                removed_count += 1
+
+        db.session.commit()
+        return jsonify({'message': f'Successfully removed {removed_count} duplicate(s)', 'removed_count': removed_count})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Failed to remove duplicates: {str(e)}'}), 500
+
+
+# ==========================================
+# Service Station Recategorization
+# ==========================================
+
+@app.route('/api/expenses/recategorize-service-stations', methods=['POST'])
+@login_required
+def recategorize_service_stations():
+    """Re-categorize existing service station transactions based on amount threshold"""
+    try:
+        service_station_keywords = ['7-eleven', '7eleven', 'ampol', 'bp ', 'shell ', 'caltex',
+                                    'united petroleum', 'metro petroleum', 'liberty ', 'puma energy',
+                                    'coles express', 'woolworths petrol', 'costco fuel']
+
+        food_category = Category.query.filter_by(name='Food & Dining').first()
+        transport_category = Category.query.filter_by(name='Transportation').first()
+
+        if not food_category or not transport_category:
+            return jsonify({'error': 'Required categories not found'}), 400
+
+        all_expenses = Expense.query.filter_by(transaction_type='expense').all()
+
+        updated_to_food = 0
+        updated_to_transport = 0
+        details = []
+
+        for expense in all_expenses:
+            desc_lower = expense.description.lower()
+            is_service_station = any(keyword in desc_lower for keyword in service_station_keywords)
+
+            if is_service_station:
+                if expense.amount >= 40:
+                    # Should be Transportation (fuel)
+                    if expense.category_id != transport_category.id:
+                        old_cat = expense.category.name if expense.category else 'None'
+                        expense.category_id = transport_category.id
+                        expense.is_essential = True
+                        updated_to_transport += 1
+                        details.append(f"{expense.description[:30]}... ${expense.amount:.2f} -> Transportation (was {old_cat})")
+                else:
+                    # Should be Food & Dining (convenience store purchase)
+                    if expense.category_id != food_category.id:
+                        old_cat = expense.category.name if expense.category else 'None'
+                        expense.category_id = food_category.id
+                        expense.is_essential = False
+                        updated_to_food += 1
+                        details.append(f"{expense.description[:30]}... ${expense.amount:.2f} -> Food & Dining (was {old_cat})")
+
+        db.session.commit()
+
+        return jsonify({
+            'message': f'Recategorized {updated_to_transport + updated_to_food} service station transactions',
+            'updated_to_transport': updated_to_transport,
+            'updated_to_food': updated_to_food,
+            'details': details[:20]  # Limit details to first 20
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Failed to recategorize: {str(e)}'}), 500
+
+
+# ==========================================
+# Enhanced Bulk Update Endpoints
+# ==========================================
+
+@app.route('/api/expenses/bulk-update-essential', methods=['POST'])
+@login_required
+def bulk_update_essential():
+    """Update is_essential for multiple expenses by ID"""
+    try:
+        data = request.get_json()
+        expense_ids = data.get('expense_ids', [])
+        is_essential = data.get('is_essential', False)
+
+        if not expense_ids:
+            return jsonify({'error': 'No expense IDs provided'}), 400
+
+        updated_count = 0
+        for expense_id in expense_ids:
+            expense = Expense.query.get(expense_id)
+            if expense:
+                expense.is_essential = is_essential
+                updated_count += 1
+
+        db.session.commit()
+        return jsonify({
+            'message': f'Successfully updated {updated_count} expense(s)',
+            'updated_count': updated_count
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Failed to update: {str(e)}'}), 500
+
+
+# ==========================================
+# Category Management Endpoints
+# ==========================================
+
+@app.route('/api/categories/<int:category_id>', methods=['PUT'])
+@login_required
+def update_category(category_id):
+    """Update a category's name or color"""
+    try:
+        category = Category.query.get_or_404(category_id)
+        data = request.get_json()
+
+        if 'name' in data:
+            # Check if name is unique (except for this category)
+            existing = Category.query.filter(Category.name == data['name'], Category.id != category_id).first()
+            if existing:
+                return jsonify({'error': 'Category name already exists'}), 400
+            category.name = data['name']
+
+        if 'color' in data:
+            category.color = data['color']
+
+        db.session.commit()
+        return jsonify({'message': 'Category updated successfully'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Failed to update category: {str(e)}'}), 500
+
+
+# ==========================================
+# PDF Export Feature
+# ==========================================
+
+try:
+    from fpdf import FPDF
+    PDF_AVAILABLE = True
+except ImportError:
+    PDF_AVAILABLE = False
+
+
+if PDF_AVAILABLE:
+    class PDFReportGenerator(FPDF):
+        """Professional PDF financial report generator"""
+
+        # Color palette
+        NAVY = (30, 58, 95)
+        TEAL = (13, 148, 136)
+        CORAL = (239, 68, 68)
+        LIGHT_GRAY = (243, 244, 246)
+        DARK_TEXT = (31, 41, 55)
+        WHITE = (255, 255, 255)
+
+        def __init__(self, title="Financial Report", period_label=""):
+            super().__init__()
+            self.title = title
+            self.period_label = period_label
+            self.set_auto_page_break(auto=True, margin=20)
+            self.set_margins(20, 20, 20)
+
+        def header(self):
+            # Navy header bar
+            self.set_fill_color(*self.NAVY)
+            self.rect(0, 0, 210, 45, 'F')
+
+            # Title
+            self.set_y(12)
+            self.set_font('Helvetica', 'B', 24)
+            self.set_text_color(*self.WHITE)
+            self.cell(0, 10, 'BALANCE SHEET', ln=True, align='C')
+
+            # Subtitle
+            self.set_font('Helvetica', '', 14)
+            self.cell(0, 7, self.title, ln=True, align='C')
+
+            # Date and period
+            self.set_font('Helvetica', '', 10)
+            self.cell(0, 5, f'Generated: {datetime.now().strftime("%B %d, %Y")}  |  Period: {self.period_label}', ln=True, align='C')
+
+            self.set_y(55)
+            self.set_text_color(*self.DARK_TEXT)
+
+        def footer(self):
+            self.set_y(-15)
+            self.set_font('Helvetica', '', 8)
+            self.set_text_color(128, 128, 128)
+            self.cell(0, 10, f'Page {self.page_no()}  |  Generated by Balance Sheet App', align='C')
+
+        def section_header(self, title):
+            self.ln(5)
+            self.set_fill_color(*self.NAVY)
+            self.set_text_color(*self.WHITE)
+            self.set_font('Helvetica', 'B', 11)
+            self.cell(0, 8, f'  {title}', fill=True, ln=True)
+            self.set_text_color(*self.DARK_TEXT)
+            self.ln(2)
+
+        def format_currency(self, amount):
+            if amount >= 0:
+                return f'${amount:,.2f}'
+            else:
+                return f'-${abs(amount):,.2f}'
+
+        def add_summary_section(self, stats):
+            self.section_header('SUMMARY')
+
+            self.set_font('Helvetica', '', 10)
+
+            # Create summary table
+            data = [
+                ['Total Income', self.format_currency(stats.get('income_total', 0))],
+                ['Total Expenses', self.format_currency(stats.get('expense_total', 0))],
+                ['Net Position', self.format_currency(stats.get('net_position', 0))],
+                ['Savings Rate', f"{(stats.get('net_position', 0) / stats.get('income_total', 1) * 100) if stats.get('income_total', 0) > 0 else 0:.1f}%"]
+            ]
+
+            for row in data:
+                self.set_font('Helvetica', '', 10)
+                self.cell(80, 7, row[0])
+                self.set_font('Helvetica', 'B', 10)
+                self.cell(0, 7, row[1], ln=True)
+
+            self.ln(3)
+
+        def add_essential_optional_section(self, stats):
+            self.section_header('ESSENTIAL VS OPTIONAL SPENDING')
+
+            essential = stats.get('essential_total', 0)
+            optional = stats.get('optional_total', 0)
+            total = essential + optional
+
+            self.set_font('Helvetica', '', 10)
+
+            if total > 0:
+                self.cell(80, 7, 'Essential Spending')
+                self.cell(40, 7, self.format_currency(essential))
+                self.cell(0, 7, f'({essential/total*100:.1f}%)', ln=True)
+
+                self.cell(80, 7, 'Optional Spending')
+                self.cell(40, 7, self.format_currency(optional))
+                self.cell(0, 7, f'({optional/total*100:.1f}%)', ln=True)
+            else:
+                self.cell(0, 7, 'No expense data available', ln=True)
+
+            self.ln(3)
+
+        def add_category_breakdown(self, by_category):
+            self.section_header('CATEGORY BREAKDOWN')
+
+            # Sort by amount descending
+            sorted_cats = sorted(by_category.items(), key=lambda x: x[1]['amount'], reverse=True)
+
+            # Table header
+            self.set_fill_color(*self.LIGHT_GRAY)
+            self.set_font('Helvetica', 'B', 9)
+            self.cell(70, 7, 'Category', border=1, fill=True)
+            self.cell(25, 7, 'Type', border=1, fill=True, align='C')
+            self.cell(40, 7, 'Amount', border=1, fill=True, align='R')
+            self.cell(25, 7, 'Count', border=1, fill=True, align='C')
+            self.ln()
+
+            # Table rows
+            self.set_font('Helvetica', '', 9)
+            for cat_name, data in sorted_cats:
+                self.cell(70, 6, cat_name[:35], border=1)
+                self.cell(25, 6, data.get('type', 'expense')[:3].title(), border=1, align='C')
+                self.cell(40, 6, self.format_currency(data['amount']), border=1, align='R')
+                self.cell(25, 6, str(data['count']), border=1, align='C')
+                self.ln()
+
+            self.ln(3)
+
+        def add_monthly_trend(self, monthly_trend):
+            self.section_header('MONTHLY TREND (LAST 12 MONTHS)')
+
+            # Table header
+            self.set_fill_color(*self.LIGHT_GRAY)
+            self.set_font('Helvetica', 'B', 9)
+            self.cell(35, 7, 'Month', border=1, fill=True)
+            self.cell(35, 7, 'Income', border=1, fill=True, align='R')
+            self.cell(35, 7, 'Expenses', border=1, fill=True, align='R')
+            self.cell(35, 7, 'Net', border=1, fill=True, align='R')
+            self.ln()
+
+            # Table rows
+            self.set_font('Helvetica', '', 9)
+            for month_data in monthly_trend:
+                self.cell(35, 6, month_data['month'], border=1)
+                self.cell(35, 6, self.format_currency(month_data['income']), border=1, align='R')
+                self.cell(35, 6, self.format_currency(month_data['expenses']), border=1, align='R')
+
+                # Color code net
+                net = month_data['net']
+                self.cell(35, 6, self.format_currency(net), border=1, align='R')
+                self.ln()
+
+            self.ln(3)
+
+
+@app.route('/api/export/pdf', methods=['POST'])
+@login_required
+def export_pdf():
+    """Generate PDF report based on selected sections and period"""
+    if not PDF_AVAILABLE:
+        return jsonify({'error': 'PDF export requires fpdf2. Install with: pip install fpdf2'}), 500
+
+    try:
+        data = request.json or {}
+        period = data.get('period', 'year')
+        sections = data.get('sections', {
+            'summary': True,
+            'essential_optional': True,
+            'category_breakdown': True,
+            'monthly_trend': False
+        })
+        custom_title = data.get('title', 'Financial Report')
+
+        # Get period label
+        period_label = get_period_label(period)
+
+        # Calculate date range
+        today = datetime.now().date()
+
+        if period.startswith('range-'):
+            range_str = period.replace('range-', '')
+            try:
+                start_str, end_str = range_str.split('_')
+                start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
+                end_date = datetime.strptime(end_str, '%Y-%m-%d').date() + timedelta(days=1)
+            except:
+                start_date = today.replace(month=1, day=1)
+                end_date = None
+        elif period.startswith('custom-'):
+            month_str = period.replace('custom-', '')
+            try:
+                year, month = map(int, month_str.split('-'))
+                start_date = datetime(year, month, 1).date()
+                if month == 12:
+                    end_date = datetime(year + 1, 1, 1).date()
+                else:
+                    end_date = datetime(year, month + 1, 1).date()
+            except:
+                start_date = today.replace(day=1)
+                end_date = None
+        elif period == 'month':
+            start_date = today.replace(day=1)
+            end_date = None
+        elif period == 'last3months':
+            start_date = (today - relativedelta(months=3))
+            end_date = None
+        elif period == 'last12months':
+            start_date = (today - relativedelta(months=12))
+            end_date = None
+        elif period == 'year':
+            start_date = today.replace(month=1, day=1)
+            end_date = None
+        else:
+            start_date = None
+            end_date = None
+
+        # Query transactions
+        query = Expense.query
+        if start_date:
+            query = query.filter(Expense.date >= start_date)
+        if end_date:
+            query = query.filter(Expense.date < end_date)
+
+        transactions = query.all()
+
+        # Calculate statistics
+        income_total = sum(t.amount for t in transactions if t.transaction_type == 'income')
+        expense_total = sum(t.amount for t in transactions if t.transaction_type == 'expense')
+        net_position = income_total - expense_total
+
+        expenses_only = [t for t in transactions if t.transaction_type == 'expense']
+        essential_total = sum(e.amount for e in expenses_only if e.is_essential)
+        optional_total = sum(e.amount for e in expenses_only if not e.is_essential)
+
+        # By category
+        by_category = {}
+        for t in transactions:
+            cat_name = t.category.name if t.category else 'Uncategorized'
+            if cat_name not in by_category:
+                by_category[cat_name] = {'amount': 0, 'count': 0, 'type': t.transaction_type}
+            by_category[cat_name]['amount'] += t.amount
+            by_category[cat_name]['count'] += 1
+
+        # Monthly trend
+        monthly_trend = []
+        for i in range(11, -1, -1):
+            month_start = (today.replace(day=1) - relativedelta(months=i))
+            month_end = month_start + relativedelta(months=1)
+            month_transactions = Expense.query.filter(
+                Expense.date >= month_start,
+                Expense.date < month_end
+            ).all()
+            month_income = sum(t.amount for t in month_transactions if t.transaction_type == 'income')
+            month_exp = sum(t.amount for t in month_transactions if t.transaction_type == 'expense')
+            monthly_trend.append({
+                'month': month_start.strftime('%b %Y'),
+                'income': month_income,
+                'expenses': month_exp,
+                'net': month_income - month_exp
+            })
+
+        stats = {
+            'income_total': income_total,
+            'expense_total': expense_total,
+            'net_position': net_position,
+            'essential_total': essential_total,
+            'optional_total': optional_total
+        }
+
+        # Generate PDF
+        pdf = PDFReportGenerator(title=custom_title, period_label=period_label)
+        pdf.add_page()
+
+        if sections.get('summary', True):
+            pdf.add_summary_section(stats)
+
+        if sections.get('essential_optional', True):
+            pdf.add_essential_optional_section(stats)
+
+        if sections.get('category_breakdown', True):
+            pdf.add_category_breakdown(by_category)
+
+        if sections.get('monthly_trend', False):
+            pdf.add_monthly_trend(monthly_trend)
+
+        # Output to BytesIO
+        pdf_output = io.BytesIO()
+        pdf.output(pdf_output)
+        pdf_output.seek(0)
+
+        from flask import send_file
+        return send_file(
+            pdf_output,
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=f'balance_sheet_report_{datetime.now().strftime("%Y-%m-%d")}.pdf'
+        )
+
+    except Exception as e:
+        return jsonify({'error': f'Failed to generate PDF: {str(e)}'}), 500
+
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=8080)
