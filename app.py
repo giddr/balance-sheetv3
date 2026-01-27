@@ -178,6 +178,11 @@ CATEGORIZATION_RULES = {
                      'managed fund', 'shares', 'etf', 'education bond', 'investment bond'],
         'essential_keywords': ['futurity', 'cfs edge', 'investment', 'education bond', 'investment bond'],
         'essential': True  # These are important financial commitments
+    },
+    'Taxation': {
+        'keywords': ['ato', 'tax', 'gst', 'payg', 'taxation', 'h&r block', 'tax return', 'bas'],
+        'essential_keywords': ['ato', 'tax', 'gst', 'payg', 'taxation'],
+        'essential': True
     }
 }
 
@@ -220,6 +225,58 @@ class CashPosition(db.Model):
     amount = db.Column(db.Float, nullable=False)
     notes = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class LearnedRule(db.Model):
+    """Stores learned categorization rules from user corrections.
+    When a user manually changes a transaction's category, we remember that
+    so future imports of the same or similar transactions get the right category.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    # Match criteria - at least one must be set
+    description_pattern = db.Column(db.String(200), nullable=True)  # Exact or partial description match
+    bpay_biller_code = db.Column(db.String(20), nullable=True)      # BPAY biller code match (highest priority)
+
+    # What to apply
+    category_id = db.Column(db.Integer, db.ForeignKey('category.id'), nullable=False)
+    is_essential = db.Column(db.Boolean, default=False)
+    transaction_type = db.Column(db.String(10), default='expense')  # 'income' or 'expense'
+
+    # Metadata
+    match_type = db.Column(db.String(20), default='exact')  # 'exact', 'contains', 'bpay'
+    priority = db.Column(db.Integer, default=0)  # Higher = checked first
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    category = db.relationship('Category', backref='learned_rules')
+
+def apply_learned_rules(description, bpay_code=None):
+    """
+    Check if we have a learned rule for this transaction.
+    Returns: (category_id, is_essential, transaction_type) or None if no rule matches.
+    Priority order: BPAY code > exact description > contains description
+    """
+    # First check BPAY code (highest priority)
+    if bpay_code:
+        rule = LearnedRule.query.filter_by(bpay_biller_code=bpay_code).first()
+        if rule:
+            return (rule.category_id, rule.is_essential, rule.transaction_type)
+
+    # Then check exact description match
+    rule = LearnedRule.query.filter_by(
+        description_pattern=description,
+        match_type='exact'
+    ).first()
+    if rule:
+        return (rule.category_id, rule.is_essential, rule.transaction_type)
+
+    # Finally check "contains" rules (lower priority)
+    desc_lower = description.lower()
+    contains_rules = LearnedRule.query.filter_by(match_type='contains').order_by(LearnedRule.priority.desc()).all()
+    for rule in contains_rules:
+        if rule.description_pattern and rule.description_pattern.lower() in desc_lower:
+            return (rule.category_id, rule.is_essential, rule.transaction_type)
+
+    return None
 
 # Smart Categorization Function
 def smart_categorize(description):
@@ -283,10 +340,19 @@ with app.app_context():
             Category(name='Alcohol & Liquor', color='#ff6348'),
             Category(name='Home & Hardware', color='#ff9f43'),
             Category(name='Electronics & Tech', color='#4b6584'),
+            Category(name='Investments & Savings', color='#2ecc71'),
+            Category(name='Taxation', color='#c0392b'),
+            Category(name='Income', color='#27ae60'),
             Category(name='Other', color='#95a5a6')
         ]
         db.session.add_all(default_categories)
         db.session.commit()
+
+    # Ensure Income and Taxation categories exist (for existing databases)
+    for cat_name, cat_color in [('Income', '#27ae60'), ('Taxation', '#c0392b'), ('Investments & Savings', '#2ecc71')]:
+        if not Category.query.filter_by(name=cat_name).first():
+            db.session.add(Category(name=cat_name, color=cat_color))
+    db.session.commit()
 
 # Routes
 @app.route('/login', methods=['GET', 'POST'])
@@ -364,12 +430,14 @@ def expenses():
 
 @app.route('/api/expenses/bulk-update-category', methods=['POST'])
 def bulk_update_category():
-    """Update category and is_essential for all expenses with matching description or BPAY biller code"""
+    """Update category and is_essential for all expenses with matching description or BPAY biller code.
+    Also saves a learned rule so future imports get the same categorization."""
     try:
         data = request.get_json()
         description = data.get('description')
         category_id = data.get('category_id')
         is_essential = data.get('is_essential', False)
+        save_rule = data.get('save_rule', True)  # Default to saving the rule
 
         if not description:
             return jsonify({'error': 'Description is required'}), 400
@@ -385,26 +453,112 @@ def bulk_update_category():
         if reference_expense.bpay_biller_code:
             # Match all expenses with the same BPAY biller code
             expenses = Expense.query.filter_by(bpay_biller_code=reference_expense.bpay_biller_code).all()
-            match_type = f'BPAY biller code {reference_expense.bpay_biller_code}'
+            match_type = 'bpay'
+            match_value = reference_expense.bpay_biller_code
         else:
             # Match all expenses with the same description
             expenses = Expense.query.filter_by(description=description).all()
-            match_type = 'description'
+            match_type = 'exact'
+            match_value = description
 
         for expense in expenses:
             expense.category_id = category_id
             expense.is_essential = is_essential
 
+        # Save a learned rule for future imports
+        if save_rule:
+            if match_type == 'bpay':
+                # Check if rule already exists for this BPAY code
+                existing_rule = LearnedRule.query.filter_by(bpay_biller_code=match_value).first()
+                if existing_rule:
+                    existing_rule.category_id = category_id
+                    existing_rule.is_essential = is_essential
+                    existing_rule.transaction_type = reference_expense.transaction_type
+                else:
+                    new_rule = LearnedRule(
+                        bpay_biller_code=match_value,
+                        category_id=category_id,
+                        is_essential=is_essential,
+                        transaction_type=reference_expense.transaction_type,
+                        match_type='bpay',
+                        priority=100  # BPAY rules have highest priority
+                    )
+                    db.session.add(new_rule)
+            else:
+                # Check if rule already exists for this description
+                existing_rule = LearnedRule.query.filter_by(description_pattern=match_value, match_type='exact').first()
+                if existing_rule:
+                    existing_rule.category_id = category_id
+                    existing_rule.is_essential = is_essential
+                    existing_rule.transaction_type = reference_expense.transaction_type
+                else:
+                    new_rule = LearnedRule(
+                        description_pattern=match_value,
+                        category_id=category_id,
+                        is_essential=is_essential,
+                        transaction_type=reference_expense.transaction_type,
+                        match_type='exact',
+                        priority=50  # Exact description rules have medium priority
+                    )
+                    db.session.add(new_rule)
+
         db.session.commit()
 
         return jsonify({
-            'message': f'Successfully updated {len(expenses)} expense(s) matching {match_type}',
+            'message': f'Successfully updated {len(expenses)} expense(s) and saved rule for future imports',
             'count': len(expenses),
-            'match_type': match_type
+            'match_type': match_type,
+            'rule_saved': save_rule
         })
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': f'Failed to update expenses: {str(e)}'}), 500
+
+@app.route('/api/learned-rules', methods=['GET'])
+def get_learned_rules():
+    """Get all learned categorization rules"""
+    rules = LearnedRule.query.order_by(LearnedRule.priority.desc(), LearnedRule.created_at.desc()).all()
+    return jsonify([{
+        'id': r.id,
+        'description_pattern': r.description_pattern,
+        'bpay_biller_code': r.bpay_biller_code,
+        'category_id': r.category_id,
+        'category_name': r.category.name if r.category else 'Unknown',
+        'is_essential': r.is_essential,
+        'transaction_type': r.transaction_type,
+        'match_type': r.match_type,
+        'priority': r.priority,
+        'created_at': r.created_at.isoformat() if r.created_at else None
+    } for r in rules])
+
+@app.route('/api/learned-rules/<int:rule_id>', methods=['DELETE'])
+def delete_learned_rule(rule_id):
+    """Delete a learned rule"""
+    rule = LearnedRule.query.get_or_404(rule_id)
+    db.session.delete(rule)
+    db.session.commit()
+    return jsonify({'message': 'Rule deleted successfully'})
+
+@app.route('/api/learned-rules', methods=['POST'])
+def create_learned_rule():
+    """Create a new learned rule manually"""
+    try:
+        data = request.get_json()
+        rule = LearnedRule(
+            description_pattern=data.get('description_pattern'),
+            bpay_biller_code=data.get('bpay_biller_code'),
+            category_id=data['category_id'],
+            is_essential=data.get('is_essential', False),
+            transaction_type=data.get('transaction_type', 'expense'),
+            match_type=data.get('match_type', 'contains'),
+            priority=data.get('priority', 10)
+        )
+        db.session.add(rule)
+        db.session.commit()
+        return jsonify({'message': 'Rule created successfully', 'id': rule.id}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/expenses/delete-all', methods=['POST'])
 def delete_all_expenses():
@@ -439,6 +593,7 @@ def expense_detail(expense_id):
 
     if request.method == 'PUT':
         data = request.json
+        save_rule = data.get('save_rule', False)  # Only save rule if explicitly requested
 
         # Support partial updates (for category editing)
         if 'description' in data:
@@ -469,8 +624,48 @@ def expense_detail(expense_id):
                         db.session.add(tag)
                     expense.tags.append(tag)
 
+        # Save learned rule if requested (for "Apply to all" functionality)
+        if save_rule and 'category_id' in data:
+            if expense.bpay_biller_code:
+                # BPAY rule
+                existing_rule = LearnedRule.query.filter_by(bpay_biller_code=expense.bpay_biller_code).first()
+                if existing_rule:
+                    existing_rule.category_id = expense.category_id
+                    existing_rule.is_essential = expense.is_essential
+                    existing_rule.transaction_type = expense.transaction_type
+                else:
+                    new_rule = LearnedRule(
+                        bpay_biller_code=expense.bpay_biller_code,
+                        category_id=expense.category_id,
+                        is_essential=expense.is_essential,
+                        transaction_type=expense.transaction_type,
+                        match_type='bpay',
+                        priority=100
+                    )
+                    db.session.add(new_rule)
+            else:
+                # Exact description rule
+                existing_rule = LearnedRule.query.filter_by(
+                    description_pattern=expense.description,
+                    match_type='exact'
+                ).first()
+                if existing_rule:
+                    existing_rule.category_id = expense.category_id
+                    existing_rule.is_essential = expense.is_essential
+                    existing_rule.transaction_type = expense.transaction_type
+                else:
+                    new_rule = LearnedRule(
+                        description_pattern=expense.description,
+                        category_id=expense.category_id,
+                        is_essential=expense.is_essential,
+                        transaction_type=expense.transaction_type,
+                        match_type='exact',
+                        priority=50
+                    )
+                    db.session.add(new_rule)
+
         db.session.commit()
-        return jsonify({'message': 'Expense updated successfully'})
+        return jsonify({'message': 'Expense updated successfully', 'rule_saved': save_rule})
 
 @app.route('/api/categories', methods=['GET', 'POST'])
 def categories():
@@ -930,12 +1125,21 @@ def import_csv():
                             continue
 
                         # Keywords that indicate DEBITS (money going OUT / expenses)
-                        debit_keywords = ['purchase', 'bpay', 'withdrawal', 'atm',
-                                         'direct credit to', 'direct debit to', 'payment to', 'transfer to']
+                        debit_keywords = [
+                            'purchase', 'bpay', 'withdrawal', 'atm', 'pos',
+                            'direct credit to', 'direct debit to', 'payment to', 'transfer to',
+                            'eftpos', 'visa purchase', 'card purchase'
+                        ]
 
                         # Keywords that indicate CREDITS (money coming IN / income)
-                        credit_keywords = ['direct credit from', 'transfer from', 'deposit',
-                                          'payment received', 'salary', 'wage']
+                        credit_keywords = [
+                            'direct credit from', 'transfer from', 'deposit',
+                            'payment received', 'direct debit received', 'online payment received',
+                            'salary', 'wage', 'refund',
+                            'jeremy wald',           # Rental income - Denbigh Road
+                            'rt etgar glen eira',    # Rental income - Brooklyn Avenue
+                            'rt etgar'               # Shorter match
+                        ]
 
                         # Check for debit keywords first
                         is_debit = any(keyword in desc_lower for keyword in debit_keywords)
@@ -963,29 +1167,74 @@ def import_csv():
                         is_income_from_amount = False
 
                 # Detect transaction type (income vs expense)
-                # Income keywords for detection
-                income_keywords = ['payment received', 'direct debit received', 'online payment received',
-                                   'salary', 'wage', 'deposit', 'transfer in', 'refund', 'thank you', 'thankyou',
-                                   'jeremy wald',  # Rental income from Denbigh Road apartment
-                                   'rt etgar glen eira']  # Rental income from Brooklyn Avenue property
+                # Income keywords for detection - comprehensive list recovered from original code
+                income_keywords = [
+                    'payment received',
+                    'direct debit received',
+                    'online payment received',
+                    'direct credit from',      # External credits (filtered earlier for family)
+                    'transfer from',           # External transfers (filtered earlier for family)
+                    'salary',
+                    'wage',
+                    'deposit',
+                    'transfer in',
+                    'refund',
+                    'thank you',
+                    'thankyou',
+                    'jeremy wald',             # Rental income from Denbigh Road apartment
+                    'rt etgar glen eira',      # Rental income from Brooklyn Avenue property
+                    'rt etgar',                # Shorter match for RT Etgar
+                ]
                 description_lower = description.lower()
 
                 # IMPORTANT: Explicitly mark "transfer to" as expense (never income)
                 # This fixes cases where positive amounts might be misinterpreted
-                is_transfer_out = 'transfer to' in description_lower or 'payment to' in description_lower
+                is_transfer_out = (
+                    'transfer to' in description_lower or
+                    'payment to' in description_lower or
+                    'direct debit to' in description_lower or
+                    'direct credit to' in description_lower
+                )
 
-                # Determine if this is income (use amount sign OR keywords, but NOT if it's a transfer out)
-                is_income = (is_income_from_amount or any(keyword in description_lower for keyword in income_keywords)) and not is_transfer_out
-                transaction_type = 'income' if is_income else 'expense'
+                # Extract BPAY biller code EARLY (needed for learned rule matching)
+                bpay_code = None
+                bpay_match = re.search(r'bpay.*?(\d{4,6})', description.lower())
+                if bpay_match:
+                    bpay_code = bpay_match.group(1)
 
-                # SMART CATEGORIZATION (only for expenses)
-                if transaction_type == 'expense':
-                    category_name, is_essential, suggested_tags = smart_categorize(description)
+                # STEP 1: Check learned rules first (user corrections take priority)
+                learned_result = apply_learned_rules(description, bpay_code)
+
+                if learned_result:
+                    # Use learned categorization
+                    category_id, is_essential, transaction_type = learned_result
+                    category = Category.query.get(category_id)
+                    category_name = category.name if category else 'Other'
+                    suggested_tags = ['essential' if is_essential else 'optional']
+                    if transaction_type == 'income':
+                        suggested_tags.append('income')
                 else:
-                    # Income category
-                    category_name = 'Income'
-                    is_essential = False
-                    suggested_tags = ['income']
+                    # STEP 2: Fall back to automatic detection
+
+                    # Determine if this is income (use amount sign OR keywords, but NOT if it's a transfer out)
+                    is_income = (is_income_from_amount or any(keyword in description_lower for keyword in income_keywords)) and not is_transfer_out
+                    transaction_type = 'income' if is_income else 'expense'
+
+                    # SMART CATEGORIZATION (only for expenses)
+                    if transaction_type == 'expense':
+                        category_name, is_essential, suggested_tags = smart_categorize(description)
+                    else:
+                        # Income category
+                        category_name = 'Income'
+                        is_essential = False
+                        suggested_tags = ['income']
+
+                    # Find or create category
+                    category = Category.query.filter_by(name=category_name).first()
+                    if not category:
+                        category = Category(name=category_name)
+                        db.session.add(category)
+                        db.session.flush()
 
                 # Check for duplicate (same description, amount, and date)
                 existing = Expense.query.filter_by(
@@ -997,19 +1246,6 @@ def import_csv():
                 if existing:
                     # Skip duplicate
                     continue
-
-                # Find or create category
-                category = Category.query.filter_by(name=category_name).first()
-                if not category:
-                    category = Category(name=category_name)
-                    db.session.add(category)
-                    db.session.flush()
-
-                # Extract BPAY biller code if present (format: BPAY 12345 or BPAY Biller Code: 12345)
-                bpay_code = None
-                bpay_match = re.search(r'bpay.*?(\d{4,6})', description.lower())
-                if bpay_match:
-                    bpay_code = bpay_match.group(1)
 
                 # Create expense with auto-categorization
                 expense = Expense(

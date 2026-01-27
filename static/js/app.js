@@ -41,6 +41,17 @@ function setupEventListeners() {
         importForm.addEventListener('submit', handleImportSubmit);
     }
 
+    // Manual transaction form
+    const manualForm = document.getElementById('manual-transaction-form');
+    if (manualForm) {
+        manualForm.addEventListener('submit', handleManualTransactionSubmit);
+        // Set default date to today
+        const manualDate = document.getElementById('manual-date');
+        if (manualDate) manualDate.valueAsDate = new Date();
+        // Populate category dropdown
+        populateManualCategoryDropdown();
+    }
+
     // Cash position form
     const cashForm = document.getElementById('cash-position-form');
     if (cashForm) {
@@ -1796,5 +1807,165 @@ async function addNewCategory() {
         }
     } catch (error) {
         console.error('Error adding category:', error);
+    }
+}
+
+// ============ LEARNED RULES MANAGEMENT ============
+async function loadLearnedRules() {
+    const container = document.getElementById('learned-rules-list');
+    if (!container) return;
+
+    container.innerHTML = '<p class="text-center"><span class="spinner-border spinner-border-sm"></span> Loading...</p>';
+
+    try {
+        const response = await fetch('/api/learned-rules');
+        const rules = await response.json();
+
+        if (rules.length === 0) {
+            container.innerHTML = '<p class="text-muted text-center">No learned rules yet. Edit a transaction\'s category with "Apply to all" to create rules.</p>';
+            return;
+        }
+
+        container.innerHTML = `
+            <div class="table-responsive">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>Match Pattern</th>
+                            <th>Type</th>
+                            <th>Category</th>
+                            <th>Essential</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rules.map(rule => `
+                            <tr>
+                                <td>
+                                    ${rule.bpay_biller_code
+                                        ? `<span class="badge bg-info">BPAY ${rule.bpay_biller_code}</span>`
+                                        : `<small>${truncateText(rule.description_pattern || 'N/A', 40)}</small>`
+                                    }
+                                </td>
+                                <td><span class="badge bg-${rule.transaction_type === 'income' ? 'success' : 'secondary'}">${rule.transaction_type}</span></td>
+                                <td>${rule.category_name}</td>
+                                <td>${rule.is_essential ? '<i class="bi bi-check-circle text-success"></i>' : '<i class="bi bi-x-circle text-muted"></i>'}</td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-danger" onclick="deleteLearnedRule(${rule.id})" title="Delete rule">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+            <small class="text-muted">${rules.length} rule${rules.length !== 1 ? 's' : ''} saved</small>
+        `;
+    } catch (error) {
+        console.error('Error loading learned rules:', error);
+        container.innerHTML = '<p class="text-danger">Failed to load rules</p>';
+    }
+}
+
+async function deleteLearnedRule(ruleId) {
+    if (!confirm('Delete this categorization rule? Future imports will use automatic categorization for matching transactions.')) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/learned-rules/${ruleId}`, {
+            method: 'DELETE'
+        });
+
+        if (response.ok) {
+            showToast('Rule deleted', 'success');
+            loadLearnedRules();
+        } else {
+            showToast('Failed to delete rule', 'danger');
+        }
+    } catch (error) {
+        console.error('Error deleting rule:', error);
+    }
+}
+
+// ============ MANUAL TRANSACTION ENTRY ============
+function populateManualCategoryDropdown() {
+    const select = document.getElementById('manual-category');
+    if (!select) return;
+
+    // Wait for categories to load, then populate
+    const checkCategories = setInterval(() => {
+        if (categories.length > 0) {
+            clearInterval(checkCategories);
+            select.innerHTML = '<option value="">Select Category</option>';
+            categories.forEach(cat => {
+                const option = document.createElement('option');
+                option.value = cat.id;
+                option.textContent = cat.name;
+                select.appendChild(option);
+            });
+        }
+    }, 100);
+
+    // Clear interval after 5 seconds max
+    setTimeout(() => clearInterval(checkCategories), 5000);
+}
+
+async function handleManualTransactionSubmit(e) {
+    e.preventDefault();
+
+    const resultDiv = document.getElementById('manual-result');
+    resultDiv.innerHTML = '<div class="alert alert-info">Adding transaction...</div>';
+
+    const expenseData = {
+        date: document.getElementById('manual-date').value,
+        amount: parseFloat(document.getElementById('manual-amount').value),
+        description: document.getElementById('manual-description').value,
+        category_id: document.getElementById('manual-category').value || null,
+        transaction_type: document.getElementById('manual-type').value,
+        source_account: document.getElementById('manual-source').value || null,
+        is_essential: document.getElementById('manual-essential').checked,
+        is_recurring: false,
+        notes: ''
+    };
+
+    try {
+        const response = await fetch('/api/expenses', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(expenseData)
+        });
+
+        if (response.ok) {
+            resultDiv.innerHTML = `<div class="alert alert-success">
+                <i class="bi bi-check-circle me-2"></i>Transaction added successfully!
+            </div>`;
+
+            // Reset form but keep the date
+            document.getElementById('manual-amount').value = '';
+            document.getElementById('manual-description').value = '';
+            document.getElementById('manual-category').selectedIndex = 0;
+            document.getElementById('manual-type').value = 'expense';
+            document.getElementById('manual-source').value = '';
+            document.getElementById('manual-essential').checked = false;
+
+            // Reload data
+            await loadExpenses();
+            loadStatistics(currentPeriod);
+
+            // Clear success message after 3 seconds
+            setTimeout(() => { resultDiv.innerHTML = ''; }, 3000);
+        } else {
+            const error = await response.json();
+            resultDiv.innerHTML = `<div class="alert alert-danger">
+                <i class="bi bi-x-circle me-2"></i>Error: ${error.error || 'Failed to add transaction'}
+            </div>`;
+        }
+    } catch (error) {
+        console.error('Error adding manual transaction:', error);
+        resultDiv.innerHTML = `<div class="alert alert-danger">
+            <i class="bi bi-x-circle me-2"></i>Error adding transaction. Please try again.
+        </div>`;
     }
 }
