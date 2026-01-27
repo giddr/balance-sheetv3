@@ -183,3 +183,136 @@ body {
 .card-body {
     background-color: transparent;
 }
+
+/* Colorful Month Pills */
+.nav-pills.month-pills {
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.nav-pills.month-pills .nav-link {
+    border-radius: 20px;
+    padding: 0.4rem 1rem;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--xero-text);
+    background-color: var(--xero-card-bg);
+    border: 1px solid var(--xero-border);
+    transition: all 0.2s ease;
+}
+
+.nav-pills.month-pills .nav-link:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+.nav-pills.month-pills .nav-link.active {
+    color: #fff;
+    border-color: transparent;
+}
+
+/* Month pill colors - rotating through a palette */
+.nav-pills.month-pills .nav-link:nth-child(12n+1).active { background-color: #ef4444; } /* Red - Jan */
+.nav-pills.month-pills .nav-link:nth-child(12n+2).active { background-color: #f97316; } /* Orange - Feb */
+.nav-pills.month-pills .nav-link:nth-child(12n+3).active { background-color: #eab308; } /* Yellow - Mar */
+.nav-pills.month-pills .nav-link:nth-child(12n+4).active { background-color: #22c55e; } /* Green - Apr */
+.nav-pills.month-pills .nav-link:nth-child(12n+5).active { background-color: #14b8a6; } /* Teal - May */
+.nav-pills.month-pills .nav-link:nth-child(12n+6).active { background-color: #06b6d4; } /* Cyan - Jun */
+.nav-pills.month-pills .nav-link:nth-child(12n+7).active { background-color: #3b82f6; } /* Blue - Jul */
+.nav-pills.month-pills .nav-link:nth-child(12n+8).active { background-color: #6366f1; } /* Indigo - Aug */
+.nav-pills.month-pills .nav-link:nth-child(12n+9).active { background-color: #8b5cf6; } /* Violet - Sep */
+.nav-pills.month-pills .nav-link:nth-child(12n+10).active { background-color: #a855f7; } /* Purple - Oct */
+.nav-pills.month-pills .nav-link:nth-child(12n+11).active { background-color: #ec4899; } /* Pink - Nov */
+.nav-pills.month-pills .nav-link:nth-child(12n+0).active { background-color: #f43f5e; } /* Rose - Dec */
+
+/* Inactive pill hover colors */
+.nav-pills.month-pills .nav-link:nth-child(12n+1):not(.active):hover { border-color: #ef4444; color: #ef4444; }
+.nav-pills.month-pills .nav-link:nth-child(12n+2):not(.active):hover { border-color: #f97316; color: #f97316; }
+.nav-pills.month-pills .nav-link:nth-child(12n+3):not(.active):hover { border-color: #eab308; color: #eab308; }
+.nav-pills.month-pills .nav-link:nth-child(12n+4):not(.active):hover { border-color: #22c55e; color: #22c55e; }
+.nav-pills.month-pills .nav-link:nth-child(12n+5):not(.active):hover { border-color: #14b8a6; color: #14b8a6; }
+.nav-pills.month-pills .nav-link:nth-child(12n+6):not(.active):hover { border-color: #06b6d4; color: #06b6d4; }
+.nav-pills.month-pills .nav-link:nth-child(12n+7):not(.active):hover { border-color: #3b82f6; color: #3b82f6; }
+.nav-pills.month-pills .nav-link:nth-child(12n+8):not(.active):hover { border-color: #6366f1; color: #6366f1; }
+.nav-pills.month-pills .nav-link:nth-child(12n+9):not(.active):hover { border-color: #8b5cf6; color: #8b5cf6; }
+.nav-pills.month-pills .nav-link:nth-child(12n+10):not(.active):hover { border-color: #a855f7; color: #a855f7; }
+.nav-pills.month-pills .nav-link:nth-child(12n+11):not(.active):hover { border-color: #ec4899; color: #ec4899; }
+.nav-pills.month-pills .nav-link:nth-child(12n+0):not(.active):hover { border-color: #f43f5e; color: #f43f5e; }
+
+/* Period selector wrap */
+.period-selector.flex-wrap {
+    flex-wrap: wrap;
+    gap: 0.25rem;
+}
+
+/* Expandable Category Breakdown */
+.category-breakdown-item {
+    border-bottom: 1px solid var(--xero-border);
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.category-breakdown-item:last-child {
+    border-bottom: none;
+}
+
+.category-breakdown-item:hover {
+    background-color: var(--xero-card-hover);
+}
+
+.category-breakdown-header {
+    padding: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.category-breakdown-header .category-info {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.category-color-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.category-breakdown-header .category-stats {
+    text-align: right;
+}
+
+.category-breakdown-header .expand-icon {
+    transition: transform 0.2s ease;
+    color: var(--xero-text-muted);
+}
+
+.category-breakdown-item.expanded .expand-icon {
+    transform: rotate(180deg);
+}
+
+.category-transactions {
+    display: none;
+    background-color: var(--xero-dark-bg);
+    padding: 0.5rem 1rem;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.category-breakdown-item.expanded .category-transactions {
+    display: block;
+}
+
+.category-transaction-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--xero-border);
+    font-size: 0.875rem;
+}
+
+.category-transaction-row:last-child {
+    border-bottom: none;
+}

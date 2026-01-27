@@ -642,6 +642,14 @@ def statistics():
         current_month = datetime.now().month if base_year == datetime.now().year else 12
         start_date = datetime(base_year, current_month, 1).date()
         end_date = None
+    elif period == 'last3months':
+        # Last 3 months from today
+        start_date = (datetime.now().date() - relativedelta(months=3))
+        end_date = None
+    elif period == 'last12months':
+        # Last 12 months from today
+        start_date = (datetime.now().date() - relativedelta(months=12))
+        end_date = None
     elif period == 'year':
         start_date = datetime(base_year, 1, 1).date()
         end_date = datetime(base_year + 1, 1, 1).date()

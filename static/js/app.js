@@ -264,6 +264,7 @@ function displayExpensesByMonth(expenses) {
                                 <th style="width: 30px;"></th>
                                 <th>Date</th>
                                 <th>Description</th>
+                                <th>Account</th>
                                 <th>Category</th>
                                 <th>Type</th>
                                 <th class="text-end">Amount</th>
@@ -284,8 +285,8 @@ function createExpenseRow(expense) {
     const isIncome = expense.transaction_type === 'income';
     const amountClass = isIncome ? 'text-success' : 'text-danger';
     const amountPrefix = isIncome ? '+' : '-';
-    const typeIcon = expense.is_essential ? '✓' : '◆';
-    const typeClass = expense.is_essential ? 'text-success' : 'text-purple';
+    const typeIcon = expense.is_essential ? '✓ Essential' : '◆ Optional';
+    const typeBadgeClass = expense.is_essential ? 'bg-success' : 'bg-secondary';
     const isSelected = selectedExpenses.has(expense.id);
 
     return `
@@ -300,20 +301,25 @@ function createExpenseRow(expense) {
             <td>${formatDate(expense.date)}</td>
             <td>
                 <span title="${expense.description}">${truncateText(expense.description, 40)}</span>
-                ${expense.source_account ? `<br><small class="text-muted">${expense.source_account}</small>` : ''}
+            </td>
+            <td>
+                ${expense.source_account ? `<span class="badge bg-info" style="font-size: 0.75rem;">${expense.source_account}</span>` : ''}
             </td>
             <td>
                 <span class="badge category-badge" style="background-color: ${getCategoryColor(expense.category_id)}; cursor: pointer;"
                       onclick="showCategoryEditor(${expense.id}, '${escapeHtml(expense.description)}', ${expense.category_id || 'null'}, ${expense.is_essential})">
-                    ${expense.category}
+                    ${expense.category} <i class="bi bi-pencil-fill" style="font-size: 0.6em;"></i>
                 </span>
             </td>
-            <td><span class="${typeClass}">${typeIcon}</span></td>
+            <td><span class="badge ${typeBadgeClass}" style="font-size: 0.75rem;">${typeIcon}</span></td>
             <td class="text-end">
                 <strong class="${amountClass}">${amountPrefix}$${expense.amount.toLocaleString('en-US', {minimumFractionDigits: 2})}</strong>
             </td>
             <td>
-                <button class="btn btn-sm btn-outline-danger" onclick="deleteExpense(${expense.id})">
+                <button class="btn btn-sm btn-outline-secondary" onclick="showCategoryEditor(${expense.id}, '${escapeHtml(expense.description)}', ${expense.category_id || 'null'}, ${expense.is_essential})" title="Edit Category">
+                    <i class="bi bi-tag"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteExpense(${expense.id})" title="Delete">
                     <i class="bi bi-trash"></i>
                 </button>
             </td>
@@ -378,7 +384,7 @@ function showCategoryEditor(expenseId, description, currentCategoryId, isEssenti
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <p class="text-muted small">${description}</p>
+                    <p><strong>Transaction:</strong> ${description}</p>
                     <div class="mb-3">
                         <label class="form-label">Category</label>
                         <select class="form-select" id="edit-category">
@@ -389,17 +395,29 @@ function showCategoryEditor(expenseId, description, currentCategoryId, isEssenti
                     <div class="mb-3">
                         <div class="form-check">
                             <input type="checkbox" class="form-check-input" id="edit-essential" ${isEssential ? 'checked' : ''}>
-                            <label class="form-check-label" for="edit-essential">Essential expense</label>
+                            <label class="form-check-label" for="edit-essential">Mark as Essential</label>
                         </div>
                     </div>
-                    <div class="alert alert-info small">
-                        <i class="bi bi-info-circle"></i> Updating will apply to <strong>all transactions</strong> with this description (or matching BPAY code).
+                    <div class="mb-3">
+                        <label class="form-label">Apply changes to:</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="updateScope" id="update-all" value="all" checked>
+                            <label class="form-check-label" for="update-all">
+                                All transactions with this description
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="updateScope" id="update-single" value="single">
+                            <label class="form-check-label" for="update-single">
+                                Only this transaction
+                            </label>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" onclick="updateCategoryBulk('${escapeHtml(description)}')">
-                        Update All Matching
+                    <button type="button" class="btn btn-primary" onclick="saveCategoryChanges(${expenseId}, '${escapeHtml(description)}')">
+                        Save Changes
                     </button>
                 </div>
             </div>
@@ -413,6 +431,56 @@ function showCategoryEditor(expenseId, description, currentCategoryId, isEssenti
     modal.addEventListener('hidden.bs.modal', () => {
         modal.remove();
     });
+}
+
+async function saveCategoryChanges(expenseId, description) {
+    const categoryId = document.getElementById('edit-category').value || null;
+    const isEssential = document.getElementById('edit-essential').checked;
+    const updateScope = document.querySelector('input[name="updateScope"]:checked').value;
+
+    try {
+        let response;
+        if (updateScope === 'single') {
+            // Update only this transaction
+            response = await fetch(`/api/expenses/${expenseId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    category_id: categoryId ? parseInt(categoryId) : null,
+                    is_essential: isEssential
+                })
+            });
+        } else {
+            // Update all matching transactions
+            response = await fetch('/api/expenses/bulk-update-category', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    description: description,
+                    category_id: categoryId ? parseInt(categoryId) : null,
+                    is_essential: isEssential
+                })
+            });
+        }
+
+        const result = await response.json();
+
+        if (response.ok) {
+            const modal = bootstrap.Modal.getInstance(document.getElementById('categoryEditorModal'));
+            modal.hide();
+
+            const count = result.count || 1;
+            showToast(`Updated ${count} transaction(s)`, 'success');
+
+            await loadExpenses();
+            loadStatistics(currentPeriod);
+        } else {
+            showToast(result.error || 'Failed to update', 'danger');
+        }
+    } catch (error) {
+        console.error('Error updating category:', error);
+        showToast('Error updating category', 'danger');
+    }
 }
 
 async function updateCategoryBulk(description) {
@@ -567,6 +635,9 @@ async function loadStatistics(period = 'month') {
         updateCategoryChart(stats.by_category);
         updateTrendChart(stats.monthly_trend);
 
+        // Update category breakdown
+        updateCategoryBreakdown(stats.by_category);
+
     } catch (error) {
         console.error('Error loading statistics:', error);
     }
@@ -696,6 +767,89 @@ function updateTrendChart(trendData) {
             }
         }
     });
+}
+
+// ============ CATEGORY BREAKDOWN ============
+function updateCategoryBreakdown(categoryData) {
+    const container = document.getElementById('category-breakdown-list');
+    if (!container) return;
+
+    // Sort categories by amount (descending)
+    const sortedCategories = Object.entries(categoryData)
+        .filter(([name]) => name !== 'Income')
+        .sort((a, b) => b[1].amount - a[1].amount);
+
+    if (sortedCategories.length === 0) {
+        container.innerHTML = '<p class="text-muted text-center p-3">No expense data for this period</p>';
+        return;
+    }
+
+    const total = sortedCategories.reduce((sum, [, data]) => sum + data.amount, 0);
+
+    container.innerHTML = sortedCategories.map(([name, data]) => {
+        const percentage = total > 0 ? ((data.amount / total) * 100).toFixed(1) : 0;
+        return `
+            <div class="category-breakdown-item" onclick="toggleCategoryBreakdown(this, '${escapeHtml(name)}')">
+                <div class="category-breakdown-header">
+                    <div class="category-info">
+                        <span class="category-color-dot" style="background-color: ${data.color}"></span>
+                        <div>
+                            <strong>${name}</strong>
+                            <small class="text-muted d-block">${data.count} transaction${data.count !== 1 ? 's' : ''}</small>
+                        </div>
+                    </div>
+                    <div class="category-stats">
+                        <strong class="text-danger">$${data.amount.toLocaleString('en-US', {minimumFractionDigits: 2})}</strong>
+                        <small class="text-muted d-block">${percentage}%</small>
+                    </div>
+                    <i class="bi bi-chevron-down expand-icon"></i>
+                </div>
+                <div class="category-transactions" data-category="${escapeHtml(name)}">
+                    <div class="text-center text-muted py-2">
+                        <div class="spinner-border spinner-border-sm"></div> Loading...
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+async function toggleCategoryBreakdown(element, categoryName) {
+    const isExpanded = element.classList.contains('expanded');
+
+    // Collapse all other items
+    document.querySelectorAll('.category-breakdown-item.expanded').forEach(item => {
+        if (item !== element) item.classList.remove('expanded');
+    });
+
+    // Toggle this item
+    element.classList.toggle('expanded');
+
+    // If expanding and not yet loaded, load the transactions
+    if (!isExpanded) {
+        const transactionsDiv = element.querySelector('.category-transactions');
+
+        // Filter expenses for this category from allExpenses
+        const categoryExpenses = allExpenses.filter(exp =>
+            exp.category === categoryName &&
+            exp.transaction_type === 'expense'
+        ).slice(0, 20); // Limit to 20 for performance
+
+        if (categoryExpenses.length === 0) {
+            transactionsDiv.innerHTML = '<p class="text-muted text-center py-2">No transactions</p>';
+            return;
+        }
+
+        transactionsDiv.innerHTML = categoryExpenses.map(exp => `
+            <div class="category-transaction-row">
+                <div>
+                    <span class="text-muted">${formatDate(exp.date)}</span>
+                    <span class="ms-2">${truncateText(exp.description, 40)}</span>
+                </div>
+                <strong class="text-danger">-$${exp.amount.toLocaleString('en-US', {minimumFractionDigits: 2})}</strong>
+            </div>
+        `).join('');
+    }
 }
 
 // ============ CASH POSITION & RUNWAY ============
