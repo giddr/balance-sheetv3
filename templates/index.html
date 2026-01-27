@@ -270,11 +270,20 @@
                     <div class="modal-dialog">
                         <div class="modal-content">
                             <div class="modal-header">
-                                <h5 class="modal-title">Add Expense</h5>
+                                <h5 class="modal-title">Add Transaction</h5>
                                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                             </div>
                             <div class="modal-body">
                                 <form id="expense-form">
+                                    <div class="mb-3">
+                                        <label class="form-label">Type</label>
+                                        <div class="btn-group w-100" role="group">
+                                            <input type="radio" class="btn-check" name="transaction-type" id="type-expense" value="expense" checked>
+                                            <label class="btn btn-outline-danger" for="type-expense">💸 Expense</label>
+                                            <input type="radio" class="btn-check" name="transaction-type" id="type-income" value="income">
+                                            <label class="btn btn-outline-success" for="type-income">💰 Income</label>
+                                        </div>
+                                    </div>
                                     <div class="mb-3">
                                         <label class="form-label">Description</label>
                                         <input type="text" class="form-control" id="description" required>

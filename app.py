@@ -326,6 +326,7 @@ def expenses():
             is_recurring=data.get('is_recurring', False),
             recurring_frequency=data.get('recurring_frequency'),
             is_essential=data.get('is_essential', False),
+            transaction_type=data.get('transaction_type', 'expense'),
             notes=data.get('notes', '')
         )
 
@@ -610,6 +611,16 @@ def cash_runway():
 @app.route('/api/statistics', methods=['GET'])
 def statistics():
     period = request.args.get('period', 'month')
+    selected_year = request.args.get('year', None)
+
+    # Use selected year or current year
+    if selected_year:
+        try:
+            base_year = int(selected_year)
+        except:
+            base_year = datetime.now().year
+    else:
+        base_year = datetime.now().year
 
     # Handle custom month selection (format: "custom-YYYY-MM")
     if period.startswith('custom-'):
@@ -624,14 +635,16 @@ def statistics():
                 end_date = datetime(year, month + 1, 1).date()
         except:
             # Invalid format, default to current month
-            start_date = datetime.now().date().replace(day=1)
+            start_date = datetime(base_year, datetime.now().month, 1).date()
             end_date = None
     elif period == 'month':
-        start_date = datetime.now().date().replace(day=1)
+        # Use current month of base_year (or current month if it's the current year)
+        current_month = datetime.now().month if base_year == datetime.now().year else 12
+        start_date = datetime(base_year, current_month, 1).date()
         end_date = None
     elif period == 'year':
-        start_date = datetime.now().date().replace(month=1, day=1)
-        end_date = None
+        start_date = datetime(base_year, 1, 1).date()
+        end_date = datetime(base_year + 1, 1, 1).date()
     else:
         start_date = None
         end_date = None
@@ -649,15 +662,27 @@ def statistics():
     expense_total = sum(t.amount for t in transactions if t.transaction_type == 'expense')
     net_position = income_total - expense_total
 
-    # Always calculate year and month totals for dashboard cards
-    year_start = datetime.now().date().replace(month=1, day=1)
-    year_transactions = Expense.query.filter(Expense.date >= year_start).all()
+    # Always calculate year and month totals for dashboard cards (using selected year)
+    year_start = datetime(base_year, 1, 1).date()
+    year_end = datetime(base_year + 1, 1, 1).date()
+    year_transactions = Expense.query.filter(Expense.date >= year_start, Expense.date < year_end).all()
     year_income = sum(t.amount for t in year_transactions if t.transaction_type == 'income')
     year_expenses = sum(t.amount for t in year_transactions if t.transaction_type == 'expense')
     year_net = year_income - year_expenses
 
-    month_start = datetime.now().date().replace(day=1)
-    month_transactions = Expense.query.filter(Expense.date >= month_start).all()
+    # For month, use current month if viewing current year, otherwise use December of selected year
+    if base_year == datetime.now().year:
+        month_start = datetime.now().date().replace(day=1)
+        month_end = None
+    else:
+        # Show December for past years
+        month_start = datetime(base_year, 12, 1).date()
+        month_end = datetime(base_year + 1, 1, 1).date()
+
+    month_query = Expense.query.filter(Expense.date >= month_start)
+    if month_end:
+        month_query = month_query.filter(Expense.date < month_end)
+    month_transactions = month_query.all()
     month_income = sum(t.amount for t in month_transactions if t.transaction_type == 'income')
     month_expenses = sum(t.amount for t in month_transactions if t.transaction_type == 'expense')
     month_net = month_income - month_expenses
@@ -681,25 +706,25 @@ def statistics():
         category_stats[cat_name]['amount'] += transaction.amount
         category_stats[cat_name]['count'] += 1
 
-    # Monthly trend (last 12 months)
+    # Monthly trend (12 months of selected year)
     monthly_trend = []
-    for i in range(11, -1, -1):
-        month_start = (datetime.now().date().replace(day=1) - relativedelta(months=i))
-        month_end = month_start + relativedelta(months=1)
-        month_transactions = Expense.query.filter(
-            Expense.date >= month_start,
-            Expense.date < month_end
+    for month_num in range(1, 13):
+        m_start = datetime(base_year, month_num, 1).date()
+        m_end = datetime(base_year, month_num + 1, 1).date() if month_num < 12 else datetime(base_year + 1, 1, 1).date()
+        m_transactions = Expense.query.filter(
+            Expense.date >= m_start,
+            Expense.date < m_end
         ).all()
-        month_income = sum(t.amount for t in month_transactions if t.transaction_type == 'income')
-        month_exp = sum(t.amount for t in month_transactions if t.transaction_type == 'expense')
-        month_expenses_only = [t for t in month_transactions if t.transaction_type == 'expense']
+        m_income = sum(t.amount for t in m_transactions if t.transaction_type == 'income')
+        m_exp = sum(t.amount for t in m_transactions if t.transaction_type == 'expense')
+        m_expenses_only = [t for t in m_transactions if t.transaction_type == 'expense']
         monthly_trend.append({
-            'month': month_start.strftime('%b %Y'),
-            'income': month_income,
-            'expenses': month_exp,
-            'net': month_income - month_exp,
-            'essential': sum(e.amount for e in month_expenses_only if e.is_essential),
-            'optional': sum(e.amount for e in month_expenses_only if not e.is_essential)
+            'month': m_start.strftime('%b %Y'),
+            'income': m_income,
+            'expenses': m_exp,
+            'net': m_income - m_exp,
+            'essential': sum(e.amount for e in m_expenses_only if e.is_essential),
+            'optional': sum(e.amount for e in m_expenses_only if not e.is_essential)
         })
 
     # Calculate month-over-month net change

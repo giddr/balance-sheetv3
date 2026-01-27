@@ -458,6 +458,7 @@ async function handleExpenseSubmit(e) {
 
     const tags = document.getElementById('tags').value.split(',').map(t => t.trim()).filter(t => t.length > 0);
     const isRecurring = document.getElementById('is-recurring').checked;
+    const transactionType = document.querySelector('input[name="transaction-type"]:checked')?.value || 'expense';
 
     const expenseData = {
         description: document.getElementById('description').value,
@@ -468,6 +469,7 @@ async function handleExpenseSubmit(e) {
         is_recurring: isRecurring,
         recurring_frequency: isRecurring ? document.getElementById('recurring-frequency').value : null,
         is_essential: false,
+        transaction_type: transactionType,
         notes: document.getElementById('notes')?.value || ''
     };
 
@@ -483,6 +485,8 @@ async function handleExpenseSubmit(e) {
             document.getElementById('expense-form').reset();
             document.getElementById('date').valueAsDate = new Date();
             document.getElementById('recurring-options').style.display = 'none';
+            // Reset transaction type to expense (default)
+            document.getElementById('type-expense').checked = true;
 
             // Close modal
             const modal = bootstrap.Modal.getInstance(document.getElementById('addExpenseModal'));
@@ -492,11 +496,11 @@ async function handleExpenseSubmit(e) {
             await loadExpenses();
             loadStatistics(currentPeriod);
 
-            showToast('Expense added successfully', 'success');
+            showToast(`${transactionType === 'income' ? 'Income' : 'Expense'} added successfully`, 'success');
         }
     } catch (error) {
         console.error('Error adding expense:', error);
-        showToast('Error adding expense', 'danger');
+        showToast('Error adding transaction', 'danger');
     }
 }
 
@@ -521,8 +525,12 @@ async function deleteExpense(id) {
 async function loadStatistics(period = 'month') {
     currentPeriod = period;
 
+    // Get selected year from filter
+    const yearFilter = document.getElementById('filter-year');
+    const selectedYear = yearFilter ? yearFilter.value : new Date().getFullYear();
+
     try {
-        const response = await fetch(`/api/statistics?period=${period}`);
+        const response = await fetch(`/api/statistics?period=${period}&year=${selectedYear}`);
         const stats = await response.json();
 
         // Update dashboard cards (year totals)
