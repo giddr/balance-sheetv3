@@ -26,7 +26,7 @@
                         <div class="d-flex align-items-center justify-content-between">
                             <div>
                                 <h6 class="mb-0 text-muted">💰 INCOME</h6>
-                                <small class="text-muted"><em>(2025)</em></small>
+                                <small class="text-muted"><em>(<span class="current-year"></span>)</em></small>
                             </div>
                             <div class="text-end">
                                 <h3 class="mb-0" id="total-income" style="color: #10b981; font-weight: 600;">$0.00</h3>
@@ -42,7 +42,7 @@
                         <div class="d-flex align-items-center justify-content-between">
                             <div>
                                 <h6 class="mb-0 text-muted">💸 EXPENSES</h6>
-                                <small class="text-muted"><em>(2025)</em></small>
+                                <small class="text-muted"><em>(<span class="current-year"></span>)</em></small>
                             </div>
                             <div class="text-end">
                                 <h3 class="mb-0" id="total-expenses" style="color: #ef4444; font-weight: 600;">$0.00</h3>
@@ -58,7 +58,7 @@
                         <div class="d-flex align-items-center justify-content-between">
                             <div>
                                 <h6 class="mb-0 text-muted">📊 NET</h6>
-                                <small class="text-muted"><em>(2025)</em></small>
+                                <small class="text-muted"><em>(<span class="current-year"></span>)</em></small>
                             </div>
                             <div class="text-end">
                                 <h3 class="mb-0" id="net-position" style="color: #3b82f6; font-weight: 600;">$0.00</h3>
@@ -76,7 +76,7 @@
                         <div class="d-flex align-items-center justify-content-between">
                             <div>
                                 <h6 class="mb-0 text-muted">✓ ESSENTIAL</h6>
-                                <small class="text-muted"><em>(2025)</em></small>
+                                <small class="text-muted"><em>(<span class="current-year"></span>)</em></small>
                             </div>
                             <h3 class="mb-0" id="essential-expenses" style="color: #10b981; font-weight: 600;">$0.00</h3>
                         </div>
@@ -89,7 +89,7 @@
                         <div class="d-flex align-items-center justify-content-between">
                             <div>
                                 <h6 class="mb-0 text-muted">◆ OPTIONAL</h6>
-                                <small class="text-muted"><em>(2025)</em></small>
+                                <small class="text-muted"><em>(<span class="current-year"></span>)</em></small>
                             </div>
                             <h3 class="mb-0" id="optional-expenses" style="color: #8b5cf6; font-weight: 600;">$0.00</h3>
                         </div>
@@ -210,8 +210,7 @@
                                 <label class="form-label small text-muted mb-1">Year</label>
                                 <select class="form-select form-select-sm" id="filter-year">
                                     <option value="">All Years</option>
-                                    <option value="2025" selected>2025</option>
-                                    <option value="2024">2024</option>
+                                    <!-- Years populated by JavaScript -->
                                 </select>
                             </div>
                             <div class="col-md-2">

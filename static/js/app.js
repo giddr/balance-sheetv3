@@ -5,6 +5,7 @@ let currentPeriod = 'month';
 let categoryChart = null;
 let trendChart = null;
 let selectedExpenses = new Set();
+const currentYear = new Date().getFullYear();
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
@@ -15,6 +16,14 @@ document.addEventListener('DOMContentLoaded', function() {
     // Set default cash date to today
     const cashDateInput = document.getElementById('cash-date-input');
     if (cashDateInput) cashDateInput.valueAsDate = new Date();
+
+    // Set current year in all year labels
+    document.querySelectorAll('.current-year').forEach(el => {
+        el.textContent = currentYear;
+    });
+
+    // Populate year filter dropdown dynamically
+    populateYearFilter();
 
     // Load all data
     loadCategories();
@@ -27,6 +36,24 @@ document.addEventListener('DOMContentLoaded', function() {
     // Setup event listeners
     setupEventListeners();
 });
+
+// Populate year filter with dynamic years
+function populateYearFilter() {
+    const yearFilter = document.getElementById('filter-year');
+    if (!yearFilter) return;
+
+    // Keep the "All Years" option
+    yearFilter.innerHTML = '<option value="">All Years</option>';
+
+    // Add years from current year back to 2024
+    for (let year = currentYear; year >= 2024; year--) {
+        const option = document.createElement('option');
+        option.value = year;
+        option.textContent = year;
+        if (year === currentYear) option.selected = true;
+        yearFilter.appendChild(option);
+    }
+}
 
 function setupEventListeners() {
     // Expense form
@@ -1124,7 +1151,7 @@ function clearFilters() {
     const transactionType = document.getElementById('filter-transaction-type');
 
     if (search) search.value = '';
-    if (year) year.value = '2025';
+    if (year) year.value = currentYear.toString();
     if (category) category.value = '';
     if (type) type.value = '';
     if (transactionType) transactionType.value = '';

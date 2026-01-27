@@ -250,6 +250,7 @@ body {
     border-bottom: 1px solid var(--xero-border);
     cursor: pointer;
     transition: background-color 0.2s ease;
+    background-color: transparent;
 }
 
 .category-breakdown-item:last-child {
@@ -273,6 +274,14 @@ body {
     gap: 0.75rem;
 }
 
+.category-breakdown-header .category-info strong {
+    color: var(--xero-text);
+}
+
+.category-breakdown-header .category-info small {
+    color: var(--xero-text-muted);
+}
+
 .category-color-dot {
     width: 12px;
     height: 12px;
@@ -282,6 +291,10 @@ body {
 
 .category-breakdown-header .category-stats {
     text-align: right;
+}
+
+.category-breakdown-header .category-stats small {
+    color: var(--xero-text-muted);
 }
 
 .category-breakdown-header .expand-icon {
@@ -311,10 +324,15 @@ body {
     padding: 0.5rem 0;
     border-bottom: 1px solid var(--xero-border);
     font-size: 0.875rem;
+    color: var(--xero-text);
 }
 
 .category-transaction-row:last-child {
     border-bottom: none;
+}
+
+.category-transaction-row .text-muted {
+    color: var(--xero-text-muted) !important;
 }
 
 /* Modal Dark Theme */
