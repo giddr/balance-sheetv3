@@ -316,3 +316,106 @@ body {
 .category-transaction-row:last-child {
     border-bottom: none;
 }
+
+/* Modal Dark Theme */
+.modal-content {
+    background-color: var(--xero-card-bg);
+    border: 1px solid var(--xero-border);
+    color: var(--xero-text);
+}
+
+.modal-header {
+    border-bottom: 1px solid var(--xero-border);
+    color: var(--xero-text);
+}
+
+.modal-header .btn-close {
+    filter: invert(1) grayscale(100%) brightness(200%);
+}
+
+.modal-title {
+    color: var(--xero-text);
+}
+
+.modal-body {
+    color: var(--xero-text);
+}
+
+.modal-body p {
+    color: var(--xero-text);
+}
+
+.modal-body label {
+    color: var(--xero-text);
+}
+
+.modal-body .form-label {
+    color: var(--xero-text);
+}
+
+.modal-body .form-check-label {
+    color: var(--xero-text);
+}
+
+.modal-footer {
+    border-top: 1px solid var(--xero-border);
+}
+
+/* Form controls in modals */
+.modal .form-control,
+.modal .form-select {
+    background-color: var(--xero-dark-bg);
+    border: 1px solid var(--xero-border);
+    color: var(--xero-text);
+}
+
+.modal .form-control:focus,
+.modal .form-select:focus {
+    background-color: var(--xero-card-bg);
+    border-color: var(--xero-blue);
+    color: var(--xero-text);
+    box-shadow: 0 0 0 3px rgba(19, 181, 234, 0.1);
+}
+
+.modal .form-control::placeholder {
+    color: var(--xero-text-muted);
+}
+
+/* Radio buttons and checkboxes in modals */
+.modal .form-check-input {
+    background-color: var(--xero-dark-bg);
+    border-color: var(--xero-border);
+}
+
+.modal .form-check-input:checked {
+    background-color: var(--xero-blue);
+    border-color: var(--xero-blue);
+}
+
+.modal .form-check-input:focus {
+    box-shadow: 0 0 0 3px rgba(19, 181, 234, 0.25);
+}
+
+/* List group in modals (for duplicates) */
+.modal .list-group-item {
+    background-color: var(--xero-card-bg);
+    border-color: var(--xero-border);
+    color: var(--xero-text);
+}
+
+.modal .list-group-item:hover {
+    background-color: var(--xero-card-hover);
+}
+
+/* Alert styling in modals */
+.modal .alert-warning {
+    background-color: rgba(245, 158, 11, 0.1);
+    border-color: #f59e0b;
+    color: #f59e0b;
+}
+
+.modal .alert-danger {
+    background-color: rgba(239, 68, 68, 0.1);
+    border-color: #ef4444;
+    color: #ef4444;
+}
