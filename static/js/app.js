@@ -6,6 +6,7 @@ let categoryChart = null;
 let trendChart = null;
 let selectedExpenses = new Set();
 const currentYear = new Date().getFullYear();
+let statsYear = 2025; // Year shown in statistics cards - default to 2025 where most data is
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
@@ -17,9 +18,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const cashDateInput = document.getElementById('cash-date-input');
     if (cashDateInput) cashDateInput.valueAsDate = new Date();
 
-    // Set current year in all year labels
+    // Set year labels to match statsYear (default 2025)
     document.querySelectorAll('.current-year').forEach(el => {
-        el.textContent = currentYear;
+        el.textContent = statsYear;
     });
 
     // Populate year filter dropdown dynamically
@@ -42,17 +43,43 @@ function populateYearFilter() {
     const yearFilter = document.getElementById('filter-year');
     if (!yearFilter) return;
 
-    // Keep the "All Years" option
-    yearFilter.innerHTML = '<option value="">All Years</option>';
+    // Keep the "All Years" option (selected by default to show all transactions)
+    yearFilter.innerHTML = '<option value="" selected>All Years</option>';
 
     // Add years from current year back to 2024
     for (let year = currentYear; year >= 2024; year--) {
         const option = document.createElement('option');
         option.value = year;
         option.textContent = year;
-        if (year === currentYear) option.selected = true;
         yearFilter.appendChild(option);
     }
+}
+
+// Set year for statistics cards and reload stats
+function setStatsYear(year) {
+    statsYear = year;
+
+    // Update toggle button states
+    const toggleButtons = document.querySelectorAll('#stats-year-toggle button');
+    toggleButtons.forEach(btn => {
+        if (parseInt(btn.dataset.year) === year) {
+            btn.classList.add('active');
+            btn.classList.remove('btn-outline-primary');
+            btn.classList.add('btn-primary');
+        } else {
+            btn.classList.remove('active');
+            btn.classList.remove('btn-primary');
+            btn.classList.add('btn-outline-primary');
+        }
+    });
+
+    // Update the year labels in the stats cards
+    document.querySelectorAll('.current-year').forEach(el => {
+        el.textContent = year;
+    });
+
+    // Reload statistics with the new year
+    loadStatistics(currentPeriod);
 }
 
 function setupEventListeners() {
@@ -631,9 +658,8 @@ async function deleteExpense(id) {
 async function loadStatistics(period = 'month') {
     currentPeriod = period;
 
-    // Get selected year from filter
-    const yearFilter = document.getElementById('filter-year');
-    const selectedYear = yearFilter ? yearFilter.value : new Date().getFullYear();
+    // Use statsYear for the statistics cards (set by toggle)
+    const selectedYear = statsYear;
 
     try {
         const response = await fetch(`/api/statistics?period=${period}&year=${selectedYear}`);
@@ -1151,7 +1177,7 @@ function clearFilters() {
     const transactionType = document.getElementById('filter-transaction-type');
 
     if (search) search.value = '';
-    if (year) year.value = currentYear.toString();
+    if (year) year.value = '';  // Show all years by default
     if (category) category.value = '';
     if (type) type.value = '';
     if (transactionType) transactionType.value = '';

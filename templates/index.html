@@ -18,6 +18,14 @@
     </nav>
 
     <div class="container mt-4">
+        <!-- Year Toggle for Stats -->
+        <div class="d-flex justify-content-end mb-3">
+            <div class="btn-group btn-group-sm" role="group" id="stats-year-toggle">
+                <button type="button" class="btn btn-primary active" data-year="2025" onclick="setStatsYear(2025)">2025</button>
+                <button type="button" class="btn btn-outline-primary" data-year="2026" onclick="setStatsYear(2026)">2026</button>
+            </div>
+        </div>
+
         <!-- Statistics Cards -->
         <div class="row mb-4 g-3" id="stats-cards">
             <div class="col-md-4">

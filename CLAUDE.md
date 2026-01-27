@@ -68,6 +68,7 @@ balance-sheet/
 - **Category Management**: Inline rename, color picker, add/delete categories
 - **BPAY Matching**: Store biller codes for smart categorization
 - **Cash Position & Runway**: Track how long your money will last
+- **Year Toggle**: Switch statistics display between years (2025/2026)
 
 ## Learned Rules System
 
