@@ -1,0 +1,40 @@
+@app.route('/api/expenses/<int:expense_id>', methods=['DELETE', 'PUT'])
+def expense_detail(expense_id):
+    expense = Expense.query.get_or_404(expense_id)
+
+    if request.method == 'DELETE':
+        db.session.delete(expense)
+        db.session.commit()
+        return jsonify({'message': 'Expense deleted successfully'})
+
+    if request.method == 'PUT':
+        data = request.json
+
+        # Support partial updates (for category editing)
+        if 'description' in data:
+            expense.description = data['description']
+        if 'amount' in data:
+            expense.amount = float(data['amount'])
+        if 'date' in data:
+            expense.date = datetime.strptime(data['date'], '%Y-%m-%d').date()
+        if 'category_id' in data:
+            expense.category_id = data.get('category_id')
+        if 'is_recurring' in data:
+            expense.is_recurring = data.get('is_recurring', False)
+        if 'recurring_frequency' in data:
+            expense.recurring_frequency = data.get('recurring_frequency')
+        if 'is_essential' in data:
+            expense.is_essential = data.get('is_essential', False)
+        if 'notes' in data:
+            expense.notes = data.get('notes', '')
+
+        # Update tags only if provided
+        if 'tags' in data:
+            expense.tags.clear()
+            if data['tags']:
+                for tag_name in data['tags']:
+                    tag = Tag.query.filter_by(name=tag_name).first()
+                    if not tag:
+                        tag = Tag(name=tag_name)
+                        db.session.add(tag)
+                    expense.tags.append(tag)

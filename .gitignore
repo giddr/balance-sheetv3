@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# Database
+instance/
+*.db
+
+# OS
+.DS_Store
+*.swp
+
+# Backup/Recovery files (keep in git for now, can remove later)
+# app_BACKUP_basic.py
+# app_FULL_RECOVERED.py
+# app_LONGEST.py
+# app_RECOVERED.py
+# recovered_code_blocks.txt
+
+# Templates backups
+templates/*_RECOVERED
+templates/*_BACKUP*

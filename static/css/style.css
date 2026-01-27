@@ -1,0 +1,185 @@
+/* Xero-inspired Dark Mode */
+:root {
+    --xero-dark-bg: #0d1117;
+    --xero-card-bg: #161b22;
+    --xero-card-hover: #1c2128;
+    --xero-blue: #13B5EA;
+    --xero-blue-hover: #0fa0d1;
+    --xero-border: #30363d;
+    --xero-text: #e6edf3;
+    --xero-text-muted: #8b949e;
+    --essential: #3fb950;
+    --optional: #a371f7;
+}
+
+body {
+    background-color: var(--xero-dark-bg);
+    color: var(--xero-text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.navbar {
+    background: var(--xero-card-bg) !important;
+    border-bottom: 1px solid var(--xero-border);
+}
+
+.navbar-brand {
+    color: var(--xero-text) !important;
+}
+
+.navbar-brand i {
+    color: var(--xero-blue);
+}
+
+.card {
+    background-color: var(--xero-card-bg);
+    border: 1px solid var(--xero-border);
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+    transition: all 0.2s ease;
+}
+
+.card:hover {
+    background-color: var(--xero-card-hover);
+}
+
+.card-header {
+    background-color: transparent;
+    border-bottom: 1px solid var(--xero-border);
+    color: var(--xero-text);
+}
+
+.card-title, .card-subtitle {
+    color: var(--xero-text);
+}
+
+.form-label {
+    color: var(--xero-text);
+}
+
+.form-control, .form-select {
+    background-color: var(--xero-dark-bg);
+    border: 1px solid var(--xero-border);
+    color: var(--xero-text);
+}
+
+.form-control:focus, .form-select:focus {
+    background-color: var(--xero-card-bg);
+    border-color: var(--xero-blue);
+    color: var(--xero-text);
+    box-shadow: 0 0 0 3px rgba(19, 181, 234, 0.1);
+}
+
+.btn-primary {
+    background-color: var(--xero-blue);
+    border: none;
+}
+
+.btn-primary:hover {
+    background-color: var(--xero-blue-hover);
+}
+
+.btn-outline-primary {
+    border: 1px solid var(--xero-blue);
+    color: var(--xero-blue);
+}
+
+.btn-outline-primary:hover {
+    background-color: var(--xero-blue);
+    color: #fff;
+}
+
+.table {
+    color: var(--xero-text);
+}
+
+.table thead th {
+    background-color: var(--xero-dark-bg);
+    border-bottom: 2px solid var(--xero-border);
+    color: var(--xero-text-muted);
+}
+
+.table tbody tr {
+    border-bottom: 1px solid var(--xero-border);
+}
+
+.table tbody tr:hover {
+    background-color: var(--xero-card-hover);
+}
+
+.nav-tabs {
+    border-bottom: 2px solid var(--xero-border);
+}
+
+.nav-tabs .nav-link {
+    color: var(--xero-text-muted);
+    border: none;
+    border-bottom: 2px solid transparent;
+}
+
+.nav-tabs .nav-link:hover {
+    color: var(--xero-blue);
+    border-bottom-color: var(--xero-blue);
+}
+
+.nav-tabs .nav-link.active {
+    color: var(--xero-blue);
+    background-color: transparent;
+    border-bottom-color: var(--xero-blue);
+}
+
+.tag-badge {
+    display: inline-block;
+    padding: 0.25rem 0.625rem;
+    margin: 0.125rem;
+    border-radius: 12px;
+    font-size: 0.75rem;
+}
+
+.tag-essential {
+    background-color: rgba(63, 185, 80, 0.15);
+    color: var(--essential);
+    border: 1px solid var(--essential);
+}
+
+.tag-optional {
+    background-color: rgba(163, 113, 247, 0.15);
+    color: var(--optional);
+    border: 1px solid var(--optional);
+}
+
+.alert-info {
+    background-color: rgba(19, 181, 234, 0.1);
+    border-color: var(--xero-blue);
+    color: var(--xero-blue);
+}
+
+.alert-success {
+    background-color: rgba(63, 185, 80, 0.1);
+    border-color: var(--essential);
+    color: var(--essential);
+}
+
+.text-muted {
+    color: var(--xero-text-muted) !important;
+}
+
+/* Fix Bootstrap table white background */
+.table > :not(caption) > * > * {
+    background-color: transparent !important;
+    color: var(--xero-text);
+}
+
+.table-responsive {
+    background-color: transparent;
+}
+
+.table tbody td {
+    background-color: transparent !important;
+    border-color: var(--xero-border) !important;
+}
+
+/* Card body background */
+.card-body {
+    background-color: transparent;
+}
