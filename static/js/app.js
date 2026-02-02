@@ -11,6 +11,9 @@ let statsYear = 2025; // Year shown in statistics cards - default to 2025 where 
 // Sorting state: { column, direction } per table context
 let sortState = {}; // keyed by month or table name, e.g. { '2025-01': { column: 'date', direction: 'asc' } }
 
+// Track currently active month tab so it persists across reloads
+let activeMonthTab = null;
+
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
     // Set default date to today
@@ -346,16 +349,21 @@ function displayExpensesByMonth(expenses) {
         return;
     }
 
+    // Determine which month tab to activate (restore previous or default to first)
+    const targetMonth = (activeMonthTab && months.includes(activeMonthTab)) ? activeMonthTab : months[0];
+    activeMonthTab = targetMonth;
+
     // Create tabs
-    monthlyTabs.innerHTML = months.map((month, index) => {
+    monthlyTabs.innerHTML = months.map((month) => {
         const date = new Date(month + '-01');
         const label = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
         return `
             <li class="nav-item">
-                <button class="nav-link ${index === 0 ? 'active' : ''}"
+                <button class="nav-link ${month === targetMonth ? 'active' : ''}"
                         data-bs-toggle="pill"
                         data-bs-target="#month-${month}"
-                        type="button">
+                        type="button"
+                        onclick="activeMonthTab='${month}'">
                     ${label}
                 </button>
             </li>
@@ -372,7 +380,7 @@ function displayExpensesByMonth(expenses) {
         const monthIncome = monthExpenses.filter(e => e.transaction_type === 'income').reduce((sum, e) => sum + e.amount, 0);
 
         return `
-            <div class="tab-pane fade ${index === 0 ? 'show active' : ''}" id="month-${month}">
+            <div class="tab-pane fade ${month === targetMonth ? 'show active' : ''}" id="month-${month}">
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <div>
                         <span class="badge bg-success me-2">Income: $${monthIncome.toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
