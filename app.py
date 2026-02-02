@@ -278,6 +278,45 @@ def apply_learned_rules(description, bpay_code=None):
 
     return None
 
+def extract_fuzzy_keywords(description):
+    """
+    Extract significant keywords from a transaction description for fuzzy matching.
+    Strips noise words, reference numbers, locations, and common transaction prefixes.
+    Returns a lowercase keyword string suitable for LIKE matching.
+    """
+    desc = description.lower().strip()
+
+    # Remove long digit sequences (reference numbers, BSB codes, card numbers)
+    desc = re.sub(r'\d{5,}', ' ', desc)
+    # Remove dates in various formats
+    desc = re.sub(r'\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4}', ' ', desc)
+    # Remove short digit sequences that are likely codes (but keep 2-3 char ones that might be part of names)
+    desc = re.sub(r'\b\d{4}\b', ' ', desc)
+    # Remove special characters but keep hyphens within words
+    desc = re.sub(r'[^\w\s\-]', ' ', desc)
+
+    # Noise words to strip (common transaction prefixes, suffixes, legal terms, locations)
+    noise_words = {
+        'purchase', 'pos', 'visa', 'eftpos', 'card', 'payment', 'debit', 'credit',
+        'transfer', 'direct', 'to', 'from', 'the', 'and', 'for', 'of', 'in', 'at',
+        'pty', 'ltd', 'limited', 'inc', 'corp', 'co',
+        'au', 'aus', 'australia', 'australian',
+        'vic', 'nsw', 'qld', 'sa', 'wa', 'tas', 'nt', 'act',
+        'melbourne', 'sydney', 'brisbane', 'perth', 'adelaide',
+        'morwell', 'geelong', 'ballarat', 'bendigo',
+        'online', 'internet', 'mobile', 'app',
+        'value', 'date', 'xx', 'xxx'
+    }
+
+    # Tokenize and filter
+    tokens = desc.split()
+    significant = [t.strip('-') for t in tokens if t.strip('-') not in noise_words and len(t.strip('-')) > 1]
+
+    # Take up to 3 significant tokens as the keyword pattern
+    keyword_pattern = ' '.join(significant[:3]) if significant else desc.split()[0] if desc.split() else ''
+
+    return keyword_pattern.strip()
+
 # Smart Categorization Function
 def smart_categorize(description):
     """
@@ -438,6 +477,8 @@ def bulk_update_category():
         category_id = data.get('category_id')
         is_essential = data.get('is_essential', False)
         save_rule = data.get('save_rule', True)  # Default to saving the rule
+        match_mode = data.get('match_mode', 'exact')  # 'exact' or 'fuzzy'
+        fuzzy_keywords = data.get('fuzzy_keywords', None)
 
         if not description:
             return jsonify({'error': 'Description is required'}), 400
@@ -448,15 +489,21 @@ def bulk_update_category():
         if not reference_expense:
             return jsonify({'error': 'No expenses found with that description'}), 404
 
-        # SMART MATCHING: If the reference expense has a BPAY biller code, match by that
-        # Otherwise, match by description
-        if reference_expense.bpay_biller_code:
-            # Match all expenses with the same BPAY biller code
+        if match_mode == 'fuzzy' and fuzzy_keywords:
+            # FUZZY MATCHING: Use keyword-based LIKE queries
+            query = Expense.query
+            for keyword in fuzzy_keywords.strip().split():
+                query = query.filter(Expense.description.ilike(f'%{keyword}%'))
+            expenses = query.all()
+            match_type = 'contains'
+            match_value = fuzzy_keywords
+        elif reference_expense.bpay_biller_code:
+            # BPAY MATCHING: Match all expenses with the same BPAY biller code
             expenses = Expense.query.filter_by(bpay_biller_code=reference_expense.bpay_biller_code).all()
             match_type = 'bpay'
             match_value = reference_expense.bpay_biller_code
         else:
-            # Match all expenses with the same description
+            # EXACT MATCHING: Match all expenses with the same description
             expenses = Expense.query.filter_by(description=description).all()
             match_type = 'exact'
             match_value = description
@@ -482,6 +529,23 @@ def bulk_update_category():
                         transaction_type=reference_expense.transaction_type,
                         match_type='bpay',
                         priority=100  # BPAY rules have highest priority
+                    )
+                    db.session.add(new_rule)
+            elif match_type == 'contains':
+                # Check if a contains rule already exists for these keywords
+                existing_rule = LearnedRule.query.filter_by(description_pattern=match_value, match_type='contains').first()
+                if existing_rule:
+                    existing_rule.category_id = category_id
+                    existing_rule.is_essential = is_essential
+                    existing_rule.transaction_type = reference_expense.transaction_type
+                else:
+                    new_rule = LearnedRule(
+                        description_pattern=match_value,
+                        category_id=category_id,
+                        is_essential=is_essential,
+                        transaction_type=reference_expense.transaction_type,
+                        match_type='contains',
+                        priority=30  # Fuzzy/contains rules have lower priority than exact
                     )
                     db.session.add(new_rule)
             else:
@@ -513,6 +577,37 @@ def bulk_update_category():
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': f'Failed to update expenses: {str(e)}'}), 500
+
+@app.route('/api/expenses/fuzzy-match-preview', methods=['POST'])
+def fuzzy_match_preview():
+    """Preview how many transactions would match with fuzzy keyword matching."""
+    try:
+        data = request.get_json()
+        description = data.get('description', '')
+
+        keywords = extract_fuzzy_keywords(description)
+
+        if not keywords:
+            return jsonify({'keywords': '', 'match_count': 0, 'sample_descriptions': []})
+
+        # Find all matching transactions using chained LIKE queries
+        query = Expense.query
+        for keyword in keywords.split():
+            query = query.filter(Expense.description.ilike(f'%{keyword}%'))
+
+        matches = query.all()
+
+        # Get unique descriptions for preview
+        unique_descriptions = list(set(m.description for m in matches))
+        unique_descriptions.sort()
+
+        return jsonify({
+            'keywords': keywords,
+            'match_count': len(matches),
+            'sample_descriptions': unique_descriptions[:10]
+        })
+    except Exception as e:
+        return jsonify({'error': str(e), 'keywords': '', 'match_count': 0, 'sample_descriptions': []}), 500
 
 @app.route('/api/learned-rules', methods=['GET'])
 def get_learned_rules():

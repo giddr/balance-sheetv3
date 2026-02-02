@@ -467,13 +467,14 @@ function createExpenseRow(expense) {
             <td>${formatDate(expense.date)}</td>
             <td>
                 <span title="${expense.description}">${truncateText(expense.description, 40)}</span>
+                ${expense.notes ? '<i class="bi bi-sticky-fill text-warning ms-1" style="font-size: 0.7em; cursor: help;" title="' + escapeHtml(expense.notes) + '"></i>' : ''}
             </td>
             <td>
                 ${expense.source_account ? `<span class="badge bg-info" style="font-size: 0.75rem;">${expense.source_account}</span>` : ''}
             </td>
             <td>
                 <span class="badge category-badge" style="background-color: ${getCategoryColor(expense.category_id)}; cursor: pointer;"
-                      onclick="showCategoryEditor(${expense.id}, '${escapeHtml(expense.description)}', ${expense.category_id || 'null'}, ${expense.is_essential})">
+                      onclick="showCategoryEditor(${expense.id}, '${escapeHtml(expense.description)}', ${expense.category_id || 'null'}, ${expense.is_essential}, '${escapeHtml(expense.notes || '')}')">
                     ${expense.category} <i class="bi bi-pencil-fill" style="font-size: 0.6em;"></i>
                 </span>
             </td>
@@ -482,7 +483,7 @@ function createExpenseRow(expense) {
                 <strong class="${amountClass}">${amountPrefix}$${expense.amount.toLocaleString('en-US', {minimumFractionDigits: 2})}</strong>
             </td>
             <td>
-                <button class="btn btn-sm btn-outline-secondary" onclick="showCategoryEditor(${expense.id}, '${escapeHtml(expense.description)}', ${expense.category_id || 'null'}, ${expense.is_essential})" title="Edit Category">
+                <button class="btn btn-sm btn-outline-secondary" onclick="showCategoryEditor(${expense.id}, '${escapeHtml(expense.description)}', ${expense.category_id || 'null'}, ${expense.is_essential}, '${escapeHtml(expense.notes || '')}')" title="Edit Category">
                     <i class="bi bi-tag"></i>
                 </button>
                 <button class="btn btn-sm btn-outline-danger" onclick="deleteExpense(${expense.id})" title="Delete">
@@ -534,7 +535,7 @@ function clearSelection() {
 }
 
 // ============ CATEGORY EDITOR ============
-function showCategoryEditor(expenseId, description, currentCategoryId, isEssential) {
+function showCategoryEditor(expenseId, description, currentCategoryId, isEssential, currentNotes) {
     const categoryOptions = categories.map(cat =>
         `<option value="${cat.id}" ${cat.id === currentCategoryId ? 'selected' : ''}>${cat.name}</option>`
     ).join('');
@@ -565,6 +566,10 @@ function showCategoryEditor(expenseId, description, currentCategoryId, isEssenti
                         </div>
                     </div>
                     <div class="mb-3">
+                        <label class="form-label">Notes</label>
+                        <textarea class="form-control" id="edit-notes" rows="2" placeholder="Add a note...">${currentNotes || ''}</textarea>
+                    </div>
+                    <div class="mb-3">
                         <label class="form-label">Apply changes to:</label>
                         <div class="form-check">
                             <input class="form-check-input" type="radio" name="updateScope" id="update-all" value="all" checked>
@@ -573,11 +578,21 @@ function showCategoryEditor(expenseId, description, currentCategoryId, isEssenti
                             </label>
                         </div>
                         <div class="form-check">
+                            <input class="form-check-input" type="radio" name="updateScope" id="update-fuzzy" value="fuzzy">
+                            <label class="form-check-label" for="update-fuzzy">
+                                All similar transactions (fuzzy match)
+                            </label>
+                        </div>
+                        <div id="fuzzy-preview" style="display: none; margin-top: 8px; padding: 8px; border-radius: 6px; background: var(--xero-dark-bg); font-size: 0.85rem;">
+                            <small class="text-muted">Checking matches...</small>
+                        </div>
+                        <div class="form-check">
                             <input class="form-check-input" type="radio" name="updateScope" id="update-single" value="single">
                             <label class="form-check-label" for="update-single">
                                 Only this transaction
                             </label>
                         </div>
+                        <small id="notes-scope-hint" class="text-muted" style="display: none;">Note: Notes only apply to this transaction, not bulk updates.</small>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -594,6 +609,45 @@ function showCategoryEditor(expenseId, description, currentCategoryId, isEssenti
     const bsModal = new bootstrap.Modal(modal);
     bsModal.show();
 
+    // Fuzzy match preview logic
+    const fuzzyRadio = document.getElementById('update-fuzzy');
+    const fuzzyPreview = document.getElementById('fuzzy-preview');
+    const notesHint = document.getElementById('notes-scope-hint');
+
+    fuzzyRadio.addEventListener('change', async function() {
+        fuzzyPreview.style.display = 'block';
+        notesHint.style.display = 'block';
+        fuzzyPreview.innerHTML = '<small class="text-muted"><div class="spinner-border spinner-border-sm me-1"></div> Checking matches...</small>';
+        try {
+            const resp = await fetch('/api/expenses/fuzzy-match-preview', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ description: description })
+            });
+            const data = await resp.json();
+            fuzzyPreview.dataset.keywords = data.keywords;
+            fuzzyPreview.innerHTML = `
+                <small><strong>Keywords:</strong> "${data.keywords}"</small><br>
+                <small><strong>Found:</strong> ${data.match_count} matching transaction(s)</small>
+                ${data.sample_descriptions.slice(0, 5).map(d =>
+                    '<br><small class="text-muted">- ' + truncateText(d, 60) + '</small>'
+                ).join('')}
+                ${data.sample_descriptions.length > 5 ? '<br><small class="text-muted">...</small>' : ''}
+            `;
+        } catch (err) {
+            fuzzyPreview.innerHTML = '<small class="text-danger">Error loading preview</small>';
+        }
+    });
+
+    document.getElementById('update-all').addEventListener('change', () => {
+        fuzzyPreview.style.display = 'none';
+        notesHint.style.display = 'block';
+    });
+    document.getElementById('update-single').addEventListener('change', () => {
+        fuzzyPreview.style.display = 'none';
+        notesHint.style.display = 'none';
+    });
+
     modal.addEventListener('hidden.bs.modal', () => {
         modal.remove();
     });
@@ -602,22 +656,46 @@ function showCategoryEditor(expenseId, description, currentCategoryId, isEssenti
 async function saveCategoryChanges(expenseId, description) {
     const categoryId = document.getElementById('edit-category').value || null;
     const isEssential = document.getElementById('edit-essential').checked;
+    const notes = document.getElementById('edit-notes')?.value || '';
     const updateScope = document.querySelector('input[name="updateScope"]:checked').value;
 
     try {
         let response;
         if (updateScope === 'single') {
-            // Update only this transaction
+            // Update only this transaction (including notes)
             response = await fetch(`/api/expenses/${expenseId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     category_id: categoryId ? parseInt(categoryId) : null,
-                    is_essential: isEssential
+                    is_essential: isEssential,
+                    notes: notes
                 })
             });
+        } else if (updateScope === 'fuzzy') {
+            // Fuzzy match - update all similar transactions
+            const fuzzyKeywords = document.getElementById('fuzzy-preview')?.dataset?.keywords;
+            response = await fetch('/api/expenses/bulk-update-category', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    description: description,
+                    category_id: categoryId ? parseInt(categoryId) : null,
+                    is_essential: isEssential,
+                    match_mode: 'fuzzy',
+                    fuzzy_keywords: fuzzyKeywords
+                })
+            });
+            // Also update notes on the specific transaction if provided
+            if (notes) {
+                await fetch(`/api/expenses/${expenseId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ notes: notes })
+                });
+            }
         } else {
-            // Update all matching transactions
+            // Update all matching transactions (exact match)
             response = await fetch('/api/expenses/bulk-update-category', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -627,6 +705,14 @@ async function saveCategoryChanges(expenseId, description) {
                     is_essential: isEssential
                 })
             });
+            // Also update notes on the specific transaction if provided
+            if (notes) {
+                await fetch(`/api/expenses/${expenseId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ notes: notes })
+                });
+            }
         }
 
         const result = await response.json();
@@ -1006,12 +1092,25 @@ async function toggleCategoryBreakdown(element, categoryName) {
         }
 
         transactionsDiv.innerHTML = categoryExpenses.map(exp => `
-            <div class="category-transaction-row">
-                <div>
+            <div class="category-transaction-row" data-expense-id="${exp.id}">
+                <div style="flex: 1; min-width: 0;">
                     <span class="text-muted">${formatDate(exp.date)}</span>
-                    <span class="ms-2">${truncateText(exp.description, 40)}</span>
+                    <span class="ms-2">${truncateText(exp.description, 35)}</span>
+                    ${exp.notes ? '<i class="bi bi-sticky-fill text-warning ms-1" style="font-size: 0.65em; cursor: help;" title="' + escapeHtml(exp.notes || '') + '"></i>' : ''}
                 </div>
-                <strong class="text-danger">-$${exp.amount.toLocaleString('en-US', {minimumFractionDigits: 2})}</strong>
+                <div style="display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0;">
+                    <strong class="text-danger">-$${exp.amount.toLocaleString('en-US', {minimumFractionDigits: 2})}</strong>
+                    <button class="btn btn-sm btn-outline-secondary" style="padding: 0.1rem 0.4rem; font-size: 0.75rem;"
+                            onclick="event.stopPropagation(); showCategoryEditor(${exp.id}, '${escapeHtml(exp.description)}', ${exp.category_id || 'null'}, ${exp.is_essential}, '${escapeHtml(exp.notes || '')}')"
+                            title="Edit Category">
+                        <i class="bi bi-tag"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger" style="padding: 0.1rem 0.4rem; font-size: 0.75rem;"
+                            onclick="event.stopPropagation(); deleteExpense(${exp.id})"
+                            title="Delete">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
             </div>
         `).join('');
     }

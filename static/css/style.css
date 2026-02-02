@@ -331,6 +331,15 @@ body {
     border-bottom: none;
 }
 
+.category-transaction-row .btn {
+    opacity: 0.5;
+    transition: opacity 0.15s ease;
+}
+
+.category-transaction-row:hover .btn {
+    opacity: 1;
+}
+
 .category-transaction-row .text-muted {
     color: var(--xero-text-muted) !important;
 }
