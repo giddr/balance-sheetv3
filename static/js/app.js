@@ -8,6 +8,9 @@ let selectedExpenses = new Set();
 const currentYear = new Date().getFullYear();
 let statsYear = 2025; // Year shown in statistics cards - default to 2025 where most data is
 
+// Sorting state: { column, direction } per table context
+let sortState = {}; // keyed by month or table name, e.g. { '2025-01': { column: 'date', direction: 'asc' } }
+
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
     // Set default date to today
@@ -80,6 +83,58 @@ function setStatsYear(year) {
 
     // Reload statistics with the new year
     loadStatistics(currentPeriod);
+}
+
+// ============ SORTABLE TABLE HELPERS ============
+function getSortIcon(tableKey, column) {
+    const state = sortState[tableKey];
+    if (!state || state.column !== column) {
+        return '<i class="bi bi-arrow-down-up sort-icon text-muted" style="font-size: 0.7em; opacity: 0.4;"></i>';
+    }
+    return state.direction === 'asc'
+        ? '<i class="bi bi-sort-up sort-icon" style="font-size: 0.7em;"></i>'
+        : '<i class="bi bi-sort-down sort-icon" style="font-size: 0.7em;"></i>';
+}
+
+function toggleSort(tableKey, column, renderFn) {
+    const state = sortState[tableKey];
+    if (state && state.column === column) {
+        state.direction = state.direction === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortState[tableKey] = { column, direction: 'asc' };
+    }
+    renderFn();
+}
+
+function sortExpenses(expenses, tableKey) {
+    const state = sortState[tableKey];
+    if (!state) return expenses;
+
+    const sorted = [...expenses];
+    const dir = state.direction === 'asc' ? 1 : -1;
+
+    sorted.sort((a, b) => {
+        let valA, valB;
+        switch (state.column) {
+            case 'date':
+                return dir * a.date.localeCompare(b.date);
+            case 'description':
+                return dir * (a.description || '').localeCompare(b.description || '');
+            case 'account':
+                return dir * (a.source_account || '').localeCompare(b.source_account || '');
+            case 'category':
+                return dir * (a.category || '').localeCompare(b.category || '');
+            case 'type':
+                valA = a.is_essential ? 'essential' : 'optional';
+                valB = b.is_essential ? 'essential' : 'optional';
+                return dir * valA.localeCompare(valB);
+            case 'amount':
+                return dir * (a.amount - b.amount);
+            default:
+                return 0;
+        }
+    });
+    return sorted;
 }
 
 function setupEventListeners() {
@@ -307,6 +362,9 @@ function displayExpensesByMonth(expenses) {
         `;
     }).join('');
 
+    // Store grouped expenses for sorting re-renders
+    window._expensesByMonth = expensesByMonth;
+
     // Create content
     monthlyContent.innerHTML = months.map((month, index) => {
         const monthExpenses = expensesByMonth[month];
@@ -327,23 +385,58 @@ function displayExpensesByMonth(expenses) {
                         <thead>
                             <tr>
                                 <th style="width: 30px;"></th>
-                                <th>Date</th>
-                                <th>Description</th>
-                                <th>Account</th>
-                                <th>Category</th>
-                                <th>Type</th>
-                                <th class="text-end">Amount</th>
+                                ${renderSortableHeader('month-' + month, 'date', 'Date')}
+                                ${renderSortableHeader('month-' + month, 'description', 'Description')}
+                                ${renderSortableHeader('month-' + month, 'account', 'Account')}
+                                ${renderSortableHeader('month-' + month, 'category', 'Category')}
+                                ${renderSortableHeader('month-' + month, 'type', 'Type')}
+                                ${renderSortableHeader('month-' + month, 'amount', 'Amount', 'text-end')}
                                 <th>Actions</th>
                             </tr>
                         </thead>
-                        <tbody>
-                            ${monthExpenses.map(expense => createExpenseRow(expense)).join('')}
+                        <tbody id="month-tbody-${month}">
+                            ${sortExpenses(monthExpenses, 'month-' + month).map(expense => createExpenseRow(expense)).join('')}
                         </tbody>
                     </table>
                 </div>
             </div>
         `;
     }).join('');
+}
+
+function renderSortableHeader(tableKey, column, label, extraClass) {
+    const cls = extraClass ? ` class="${extraClass}"` : '';
+    return `<th${cls} style="cursor: pointer; user-select: none;" onclick="toggleSort('${tableKey}', '${column}', function() { rerenderMonthTable('${tableKey}'); })">${label} ${getSortIcon(tableKey, column)}</th>`;
+}
+
+function rerenderMonthTable(tableKey) {
+    const month = tableKey.replace('month-', '');
+    const expenses = window._expensesByMonth && window._expensesByMonth[month];
+    if (!expenses) return;
+
+    // Re-render the tbody
+    const tbody = document.getElementById('month-tbody-' + month);
+    if (tbody) {
+        tbody.innerHTML = sortExpenses(expenses, tableKey).map(expense => createExpenseRow(expense)).join('');
+    }
+
+    // Re-render the thead to update sort icons
+    const table = tbody.closest('table');
+    if (table) {
+        const thead = table.querySelector('thead tr');
+        if (thead) {
+            thead.innerHTML = `
+                <th style="width: 30px;"></th>
+                ${renderSortableHeader(tableKey, 'date', 'Date')}
+                ${renderSortableHeader(tableKey, 'description', 'Description')}
+                ${renderSortableHeader(tableKey, 'account', 'Account')}
+                ${renderSortableHeader(tableKey, 'category', 'Category')}
+                ${renderSortableHeader(tableKey, 'type', 'Type')}
+                ${renderSortableHeader(tableKey, 'amount', 'Amount', 'text-end')}
+                <th>Actions</th>
+            `;
+        }
+    }
 }
 
 function createExpenseRow(expense) {
@@ -997,28 +1090,70 @@ async function showCashHistoryModal() {
     try {
         const response = await fetch('/api/cash-position');
         const positions = await response.json();
+        window._cashPositions = positions;
 
-        const tbody = document.getElementById('cash-history-table');
-        if (tbody) {
-            tbody.innerHTML = positions.map(p => `
-                <tr>
-                    <td>${formatDate(p.date)}</td>
-                    <td><strong>$${p.amount.toLocaleString('en-US', {minimumFractionDigits: 2})}</strong></td>
-                    <td>${p.notes || '-'}</td>
-                    <td>
-                        <button class="btn btn-sm btn-outline-danger" onclick="deleteCashPosition(${p.id})">
-                            <i class="bi bi-trash"></i>
-                        </button>
-                    </td>
-                </tr>
-            `).join('') || '<tr><td colspan="4" class="text-muted text-center">No history</td></tr>';
-        }
+        renderCashHistoryTable();
 
         const modal = new bootstrap.Modal(document.getElementById('cashHistoryModal'));
         modal.show();
     } catch (error) {
         console.error('Error loading cash history:', error);
     }
+}
+
+function renderCashHistoryTable() {
+    const positions = window._cashPositions;
+    if (!positions) return;
+
+    const sorted = sortCashPositions(positions);
+
+    function cashHeader(col, label, extraClass) {
+        const cls = extraClass ? ` class="${extraClass}"` : '';
+        return `<th${cls} style="cursor: pointer; user-select: none;" onclick="toggleSort('cash', '${col}', renderCashHistoryTable)">${label} ${getSortIcon('cash', col)}</th>`;
+    }
+
+    const thead = document.getElementById('cash-history-thead');
+    if (thead) {
+        thead.innerHTML = `<tr>${cashHeader('date', 'Date')}${cashHeader('amount', 'Amount')}${cashHeader('notes', 'Notes')}<th>Actions</th></tr>`;
+    }
+
+    const tbody = document.getElementById('cash-history-table');
+    if (tbody) {
+        tbody.innerHTML = sorted.map(p => `
+            <tr>
+                <td>${formatDate(p.date)}</td>
+                <td><strong>$${p.amount.toLocaleString('en-US', {minimumFractionDigits: 2})}</strong></td>
+                <td>${p.notes || '-'}</td>
+                <td>
+                    <button class="btn btn-sm btn-outline-danger" onclick="deleteCashPosition(${p.id})">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </td>
+            </tr>
+        `).join('') || '<tr><td colspan="4" class="text-muted text-center">No history</td></tr>';
+    }
+}
+
+function sortCashPositions(positions) {
+    const state = sortState['cash'];
+    if (!state) return positions;
+
+    const sorted = [...positions];
+    const dir = state.direction === 'asc' ? 1 : -1;
+
+    sorted.sort((a, b) => {
+        switch (state.column) {
+            case 'date':
+                return dir * (a.date || '').localeCompare(b.date || '');
+            case 'amount':
+                return dir * (a.amount - b.amount);
+            case 'notes':
+                return dir * (a.notes || '').localeCompare(b.notes || '');
+            default:
+                return 0;
+        }
+    });
+    return sorted;
 }
 
 async function deleteCashPosition(id) {
@@ -1879,42 +2014,9 @@ async function loadLearnedRules() {
             return;
         }
 
-        container.innerHTML = `
-            <div class="table-responsive">
-                <table class="table table-sm">
-                    <thead>
-                        <tr>
-                            <th>Match Pattern</th>
-                            <th>Type</th>
-                            <th>Category</th>
-                            <th>Essential</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${rules.map(rule => `
-                            <tr>
-                                <td>
-                                    ${rule.bpay_biller_code
-                                        ? `<span class="badge bg-info">BPAY ${rule.bpay_biller_code}</span>`
-                                        : `<small>${truncateText(rule.description_pattern || 'N/A', 40)}</small>`
-                                    }
-                                </td>
-                                <td><span class="badge bg-${rule.transaction_type === 'income' ? 'success' : 'secondary'}">${rule.transaction_type}</span></td>
-                                <td>${rule.category_name}</td>
-                                <td>${rule.is_essential ? '<i class="bi bi-check-circle text-success"></i>' : '<i class="bi bi-x-circle text-muted"></i>'}</td>
-                                <td>
-                                    <button class="btn btn-sm btn-outline-danger" onclick="deleteLearnedRule(${rule.id})" title="Delete rule">
-                                        <i class="bi bi-trash"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            </div>
-            <small class="text-muted">${rules.length} rule${rules.length !== 1 ? 's' : ''} saved</small>
-        `;
+        window._learnedRules = rules;
+        renderLearnedRulesTable();
+
     } catch (error) {
         console.error('Error loading learned rules:', error);
         container.innerHTML = '<p class="text-danger">Failed to load rules</p>';
@@ -1940,6 +2042,82 @@ async function deleteLearnedRule(ruleId) {
     } catch (error) {
         console.error('Error deleting rule:', error);
     }
+}
+
+function renderLearnedRulesTable() {
+    const container = document.getElementById('learned-rules-list');
+    const rules = window._learnedRules;
+    if (!container || !rules) return;
+
+    const sortedRules = sortLearnedRules(rules);
+
+    function ruleHeader(col, label, extraClass) {
+        const cls = extraClass ? ` class="${extraClass}"` : '';
+        return `<th${cls} style="cursor: pointer; user-select: none;" onclick="toggleSort('rules', '${col}', renderLearnedRulesTable)">${label} ${getSortIcon('rules', col)}</th>`;
+    }
+
+    container.innerHTML = `
+        <div class="table-responsive">
+            <table class="table table-sm">
+                <thead>
+                    <tr>
+                        ${ruleHeader('pattern', 'Match Pattern')}
+                        ${ruleHeader('type', 'Type')}
+                        ${ruleHeader('category', 'Category')}
+                        ${ruleHeader('essential', 'Essential')}
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${sortedRules.map(rule => `
+                        <tr>
+                            <td>
+                                ${rule.bpay_biller_code
+                                    ? `<span class="badge bg-info">BPAY ${rule.bpay_biller_code}</span>`
+                                    : `<small>${truncateText(rule.description_pattern || 'N/A', 40)}</small>`
+                                }
+                            </td>
+                            <td><span class="badge bg-${rule.transaction_type === 'income' ? 'success' : 'secondary'}">${rule.transaction_type}</span></td>
+                            <td>${rule.category_name}</td>
+                            <td>${rule.is_essential ? '<i class="bi bi-check-circle text-success"></i>' : '<i class="bi bi-x-circle text-muted"></i>'}</td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-danger" onclick="deleteLearnedRule(${rule.id})" title="Delete rule">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+        <small class="text-muted">${rules.length} rule${rules.length !== 1 ? 's' : ''} saved</small>
+    `;
+}
+
+function sortLearnedRules(rules) {
+    const state = sortState['rules'];
+    if (!state) return rules;
+
+    const sorted = [...rules];
+    const dir = state.direction === 'asc' ? 1 : -1;
+
+    sorted.sort((a, b) => {
+        switch (state.column) {
+            case 'pattern':
+                const pa = a.bpay_biller_code || a.description_pattern || '';
+                const pb = b.bpay_biller_code || b.description_pattern || '';
+                return dir * pa.localeCompare(pb);
+            case 'type':
+                return dir * (a.transaction_type || '').localeCompare(b.transaction_type || '');
+            case 'category':
+                return dir * (a.category_name || '').localeCompare(b.category_name || '');
+            case 'essential':
+                return dir * ((a.is_essential ? 1 : 0) - (b.is_essential ? 1 : 0));
+            default:
+                return 0;
+        }
+    });
+    return sorted;
 }
 
 // ============ MANUAL TRANSACTION ENTRY ============

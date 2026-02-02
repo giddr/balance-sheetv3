@@ -437,3 +437,18 @@ body {
     border-color: #ef4444;
     color: #ef4444;
 }
+
+/* Sortable Table Headers */
+th[onclick] {
+    cursor: pointer;
+    user-select: none;
+    transition: color 0.15s ease;
+}
+
+th[onclick]:hover {
+    color: var(--xero-blue) !important;
+}
+
+th[onclick] .sort-icon {
+    margin-left: 0.25rem;
+}
