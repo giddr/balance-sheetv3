@@ -203,6 +203,16 @@ function setupEventListeners() {
     if (filterTransactionType) {
         filterTransactionType.addEventListener('change', filterAndDisplayExpenses);
     }
+
+    const filterAmountMin = document.getElementById('filter-amount-min');
+    if (filterAmountMin) {
+        filterAmountMin.addEventListener('input', filterAndDisplayExpenses);
+    }
+
+    const filterAmountMax = document.getElementById('filter-amount-max');
+    if (filterAmountMax) {
+        filterAmountMax.addEventListener('input', filterAndDisplayExpenses);
+    }
 }
 
 // ============ CATEGORIES ============
@@ -291,6 +301,10 @@ function filterAndDisplayExpenses() {
     const categoryFilter = document.getElementById('filter-category')?.value || '';
     const typeFilter = document.getElementById('filter-type')?.value || '';
     const transactionTypeFilter = document.getElementById('filter-transaction-type')?.value || '';
+    const amountMinStr = document.getElementById('filter-amount-min')?.value || '';
+    const amountMaxStr = document.getElementById('filter-amount-max')?.value || '';
+    const amountMin = amountMinStr ? parseFloat(amountMinStr) : null;
+    const amountMax = amountMaxStr ? parseFloat(amountMaxStr) : null;
 
     let filtered = allExpenses.filter(expense => {
         // Search filter
@@ -317,6 +331,10 @@ function filterAndDisplayExpenses() {
         if (transactionTypeFilter && expense.transaction_type !== transactionTypeFilter) {
             return false;
         }
+
+        // Amount range filter
+        if (amountMin !== null && expense.amount < amountMin) return false;
+        if (amountMax !== null && expense.amount > amountMax) return false;
 
         return true;
     });
@@ -1417,12 +1435,16 @@ function clearFilters() {
     const category = document.getElementById('filter-category');
     const type = document.getElementById('filter-type');
     const transactionType = document.getElementById('filter-transaction-type');
+    const amountMin = document.getElementById('filter-amount-min');
+    const amountMax = document.getElementById('filter-amount-max');
 
     if (search) search.value = '';
     if (year) year.value = '';  // Show all years by default
     if (category) category.value = '';
     if (type) type.value = '';
     if (transactionType) transactionType.value = '';
+    if (amountMin) amountMin.value = '';
+    if (amountMax) amountMax.value = '';
 
     filterAndDisplayExpenses();
 }
