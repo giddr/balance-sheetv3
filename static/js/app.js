@@ -170,6 +170,9 @@ function setupEventListeners() {
         cashForm.addEventListener('submit', handleCashPositionSubmit);
     }
 
+    // Cash calculator
+    setupCashCalculator();
+
     // Recurring checkbox toggle
     const recurringCheckbox = document.getElementById('is-recurring');
     if (recurringCheckbox) {
@@ -1209,6 +1212,121 @@ async function handleCashPositionSubmit(e) {
         console.error('Error saving cash position:', error);
         showToast('Error saving cash position', 'danger');
     }
+}
+
+function setupCashCalculator() {
+    const toggleBtn = document.getElementById('toggle-cash-calculator');
+    const calculator = document.getElementById('cash-calculator');
+    const addRowBtn = document.getElementById('add-calc-row');
+    const applyBtn = document.getElementById('apply-calc-total');
+
+    if (!toggleBtn || !calculator) return;
+
+    toggleBtn.addEventListener('click', () => {
+        const isHidden = calculator.style.display === 'none';
+        calculator.style.display = isHidden ? 'block' : 'none';
+    });
+
+    addRowBtn.addEventListener('click', () => addCalcRow());
+
+    applyBtn.addEventListener('click', () => {
+        const total = computeCalcTotal();
+        document.getElementById('cash-amount-input').value = total.toFixed(2);
+    });
+
+    // Delegate events for calc rows (input changes and remove buttons)
+    const calcRows = document.getElementById('calc-rows');
+    calcRows.addEventListener('input', (e) => {
+        if (e.target.classList.contains('calc-value')) {
+            updateCalcTotal();
+        }
+    });
+    calcRows.addEventListener('click', (e) => {
+        const removeBtn = e.target.closest('.calc-remove-row');
+        if (removeBtn) {
+            const row = removeBtn.closest('.calc-row');
+            const allRows = calcRows.querySelectorAll('.calc-row');
+            if (allRows.length > 1) {
+                row.remove();
+                updateRemoveButtonVisibility();
+                updateCalcTotal();
+            }
+        }
+    });
+
+    // Reset calculator when modal is hidden
+    const modal = document.getElementById('addCashPositionModal');
+    if (modal) {
+        modal.addEventListener('hidden.bs.modal', () => {
+            resetCashCalculator();
+        });
+    }
+}
+
+function addCalcRow() {
+    const calcRows = document.getElementById('calc-rows');
+    const row = document.createElement('div');
+    row.className = 'calc-row d-flex gap-2 mb-2 align-items-center';
+    row.innerHTML = `
+        <input type="text" class="form-control form-control-sm calc-label" placeholder="Account name" style="flex: 1;">
+        <input type="number" class="form-control form-control-sm calc-value" placeholder="0.00" step="0.01" style="flex: 1;">
+        <button type="button" class="btn btn-sm btn-outline-danger calc-remove-row" title="Remove">
+            <i class="bi bi-x-lg"></i>
+        </button>
+    `;
+    calcRows.appendChild(row);
+    updateRemoveButtonVisibility();
+    row.querySelector('.calc-label').focus();
+}
+
+function computeCalcTotal() {
+    let total = 0;
+    document.querySelectorAll('#calc-rows .calc-value').forEach(input => {
+        const val = parseFloat(input.value);
+        if (!isNaN(val)) total += val;
+    });
+    return total;
+}
+
+function updateCalcTotal() {
+    const total = computeCalcTotal();
+    document.getElementById('calc-total').textContent = total.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function updateRemoveButtonVisibility() {
+    const rows = document.querySelectorAll('#calc-rows .calc-row');
+    rows.forEach((row, i) => {
+        const btn = row.querySelector('.calc-remove-row');
+        if (btn) btn.style.visibility = rows.length <= 1 ? 'hidden' : 'visible';
+    });
+}
+
+function resetCashCalculator() {
+    const calculator = document.getElementById('cash-calculator');
+    if (calculator) calculator.style.display = 'none';
+
+    const calcRows = document.getElementById('calc-rows');
+    if (calcRows) {
+        calcRows.innerHTML = `
+            <div class="calc-row d-flex gap-2 mb-2 align-items-center">
+                <input type="text" class="form-control form-control-sm calc-label" placeholder="Account name" style="flex: 1;">
+                <input type="number" class="form-control form-control-sm calc-value" placeholder="0.00" step="0.01" style="flex: 1;">
+                <button type="button" class="btn btn-sm btn-outline-danger calc-remove-row" title="Remove" style="visibility: hidden;">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+            <div class="calc-row d-flex gap-2 mb-2 align-items-center">
+                <input type="text" class="form-control form-control-sm calc-label" placeholder="Account name" style="flex: 1;">
+                <input type="number" class="form-control form-control-sm calc-value" placeholder="0.00" step="0.01" style="flex: 1;">
+                <button type="button" class="btn btn-sm btn-outline-danger calc-remove-row" title="Remove">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+        `;
+    }
+
+    const totalEl = document.getElementById('calc-total');
+    if (totalEl) totalEl.textContent = '0.00';
 }
 
 async function showCashHistoryModal() {
